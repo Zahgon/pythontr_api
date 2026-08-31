@@ -1,11 +1,8 @@
-from django.contrib.auth import get_user_model
-from django.urls import reverse
-from django.test import TestCase
+from core.models import Category, get_user_model
+from core.urls import reverse
 
-from rest_framework import status
-from rest_framework.test import APIClient
-
-from core.models import Category
+from app.api import status
+from app.api.test import APIClient, TestCase
 
 from recipe.serializers import CategorySerializer
 

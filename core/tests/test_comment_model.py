@@ -1,7 +1,6 @@
-from django.test import TestCase
-from django.contrib.auth import get_user_model
+import unittest
 
-from core.models import Category, Article, Comment
+from core.models import Category, Article, Comment, get_user_model
 
 
 def test_user(email='test@hotmail.com', password='123qwe'):
@@ -16,7 +15,7 @@ def test_category(name='Php Programlama', short_name='php'):
     )
 
 
-class ModelTests(TestCase):
+class ModelTests(unittest.TestCase):
 
     def test_comment_str(self):
         category = test_category()
@@ -26,7 +25,7 @@ class ModelTests(TestCase):
             title='Sqrt fonksiyonu  pythontr.com',
             description='bla bla....',
         )
-        article.categories.add(category)
+        article.categories.append(category)
 
         comment = Comment.objects.create(
             content_object=article,
@@ -44,7 +43,7 @@ class ModelTests(TestCase):
             title='Sqrt fonksiyonu  pythontr.com',
             description='bla bla....',
         )
-        article.categories.add(category)
+        article.categories.append(category)
 
         comment = Comment.objects.create(
             content_object=article,

@@ -1,16 +1,16 @@
 import os
 import shutil
 
-from django.db import models
-from django.contrib.contenttypes.fields import GenericRelation
+from flask import current_app
 
-from django.conf import settings
+from app.extensions import db
+from core import storage
+from core.text import slugify
 
-from django.utils import timezone
-from django.utils.text import slugify
-
-from .model_category import Category
+from .base import SaveMixin, now, unique_slug
+from .model_category import Category  # noqa: F401  (kept for import parity)
 from .model_comment import Comment
+from .model_content_type import ContentType
 
 
 def article_image_file_path(instance, filename):
@@ -21,71 +21,117 @@ def article_image_file_path(instance, filename):
         c for c in f_name if c in allowed_chars).strip()
     slug = slugify(sanitized_filename)
     folder = instance.pk if instance.pk else 'temp'
-    file_path = f'{settings.ARTICLE_ROOT}{folder}/{slug}.{ext}'
+    file_path = f'{current_app.config["ARTICLE_ROOT"]}{folder}/{slug}.{ext}'
     return file_path
 
 
-class Article(models.Model):
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now_add=True)
-    categories = models.ManyToManyField(
-        Category,
-        related_name='article',
+article_categories = db.Table(
+    'core_article_categories',
+    db.Column('id', db.BigInteger().with_variant(db.Integer, 'sqlite'),
+              primary_key=True),
+    db.Column('article_id',
+              db.BigInteger().with_variant(db.Integer, 'sqlite'),
+              db.ForeignKey('core_article.id', ondelete='CASCADE'),
+              nullable=False),
+    db.Column('category_id',
+              db.BigInteger().with_variant(db.Integer, 'sqlite'),
+              db.ForeignKey('core_category.id', ondelete='CASCADE'),
+              nullable=False),
+    db.UniqueConstraint(
+        'article_id', 'category_id',
+        name='core_article_categories_article_id_category_id_uniq',
+    ),
+)
+
+
+class Article(db.Model, SaveMixin):
+    __tablename__ = 'core_article'
+    __app_label__ = 'core'
+
+    id = db.Column(db.BigInteger().with_variant(db.Integer, 'sqlite'),
+                   primary_key=True)
+    created_at = db.Column(db.DateTime, nullable=False, default=now)
+    updated_at = db.Column(db.DateTime, nullable=False, default=now)
+    title = db.Column(db.String(255), nullable=False, unique=True,
+                      default='')
+    title_h1 = db.Column(db.String(255), nullable=False, default='')
+    description = db.Column(db.Text, nullable=False, default='')
+    content = db.Column(db.Text, nullable=False, default='')
+    image = db.Column(db.String(100), nullable=True)
+    read_count = db.Column(db.Integer, nullable=False, default=0)
+    slug = db.Column(db.String(150), nullable=False, unique=True)
+    user_id = db.Column(
+        db.BigInteger().with_variant(db.Integer, 'sqlite'),
+        db.ForeignKey('core_user.id', ondelete='SET NULL'),
+        nullable=True,
     )
-    title = models.CharField(max_length=255, unique=True)
-    title_h1 = models.CharField(max_length=255)
-    description = models.TextField(blank=True)
-    content = models.TextField(blank=True)
-    image = models.ImageField(null=True, upload_to=article_image_file_path,
-                              blank=True)
-    comments = GenericRelation(Comment)
-    read_count = models.IntegerField(default=0)
-    slug = models.SlugField(unique=True, max_length=150, editable=False)
-    user = models.ForeignKey(
-        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
-        null=True, blank=True
+    is_active = db.Column(db.Boolean, nullable=False, default=False)
+    is_approval = db.Column(db.Boolean, nullable=False, default=False)
+    approval_user_id = db.Column(
+        db.BigInteger().with_variant(db.Integer, 'sqlite'),
+        db.ForeignKey('core_user.id', ondelete='SET NULL'),
+        nullable=True,
     )
-    is_active = models.BooleanField(default=False)
-    is_approval = models.BooleanField(default=False)
-    approval_user = models.ForeignKey(
-        settings.AUTH_USER_MODEL, related_name='approval_user',
-        on_delete=models.SET_NULL,
-        null=True, blank=True
+    is_delete = db.Column(db.Boolean, nullable=False, default=False)
+
+    categories = db.relationship(
+        'Category', secondary=article_categories, backref='article',
+        lazy='selectin',
     )
-    is_delete = models.BooleanField(default=False)
+    user = db.relationship('User', foreign_keys=[user_id])
+    approval_user = db.relationship('User', foreign_keys=[approval_user_id])
+
+    def __init__(self, **kwargs):
+        kwargs.setdefault('description', '')
+        kwargs.setdefault('content', '')
+        kwargs.setdefault('title_h1', '')
+        super().__init__(**kwargs)
+
+    @property
+    def pk(self):
+        return self.id
+
+    @property
+    def comments(self):
+        """``GenericRelation(Comment)``."""
+        return Comment.query.filter_by(
+            content_type_id=ContentType.get_for_model(Article).id,
+            object_id=self.id,
+        )
 
     def get_slug(self):
-        slug = slugify(self.title_h1.replace('ı', 'i'))
-        unique = slug
-        number = 1
-
-        while Article.objects.filter(slug=unique).exists():
-            unique = '{}-{}'.format(slug, number)
-            number += 1
-
-        return unique
+        return unique_slug(Article, Article.slug, self.title_h1)
 
     def save(self, *args, **kwargs):
         if not self.title_h1:
             self.title_h1 = self.title
 
-        self.updated_at = timezone.now()
+        self.updated_at = now()
+        if self.created_at is None:
+            self.created_at = self.updated_at
         self.slug = self.get_slug()
+        self.image = storage.persist(self, self.image, article_image_file_path)
 
-        super(Article, self).save(*args, **kwargs)
-        if self.image and 'temp' in self.image.path:
-            filename = os.path.basename(self.image.name).strip()
-            new_path = f'{settings.ARTICLE_ROOT}{self.pk}/{filename}'
+        super(Article, self).save()
+        if self.image and 'temp' in self.image_path:
+            filename = os.path.basename(self.image).strip()
+            article_root = current_app.config['ARTICLE_ROOT']
+            new_path = f'{article_root}{self.pk}/{filename}'
             os.makedirs(os.path.dirname(new_path), exist_ok=True)
 
-            old_path = self.image.path
-            self.image.name = new_path
-            super(Article, self).save(update_fields=['image'])
+            old_path = self.image_path
+            self.image = new_path
+            super(Article, self).save()
 
             if os.path.exists(old_path):
                 shutil.move(old_path, new_path)
 
         return self
+
+    @property
+    def image_path(self):
+        """``FieldFile.path``: the name resolved against the project root."""
+        return os.path.join(current_app.config['BASE_DIR'], self.image)
 
     def __str__(self):
         return self.title
@@ -94,5 +140,7 @@ class Article(models.Model):
     def image_url(self):
         image_url = None
         if self.image:
-            image_url = self.image.url.replace(settings.APLICATION_NAME, '')
+            image_url = self.image.replace(
+                current_app.config['APLICATION_NAME'], ''
+            )
         return image_url

@@ -1,13 +1,15 @@
-from rest_framework import mixins
-from rest_framework.permissions import (IsAuthenticated,
-                                        IsAuthenticatedOrReadOnly)
-from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
-from rest_framework.response import Response
-from rest_framework import status
+from sqlalchemy.orm import joinedload
 
-from rest_framework.exceptions import NotFound
-from django.utils.translation import gettext as _
+from app.api import mixins
+from app.api.permissions import (IsAuthenticated,
+                                 IsAuthenticatedOrReadOnly)
+from app.api.response import Response
+from app.api import status
 
+from app.api.exceptions import NotFound
+from flask_babel import gettext as _
+
+from core import lookups
 from core.models import Article
 
 from recipe import serializers
@@ -19,7 +21,7 @@ from .filter_param import RulesFilter, Search, Me, Category
 
 
 class ArticleViewSet(BaseViewSet, mixins.CreateModelMixin):
-    queryset = Article.objects.select_related('user').all()
+    model = Article
     serializer_class = serializers.ArticleSerializer
     permission_classes_by_action = {
         'list': [IsAuthenticatedOrReadOnly],
@@ -29,18 +31,19 @@ class ArticleViewSet(BaseViewSet, mixins.CreateModelMixin):
         'destroy': [IsAuthenticatedAndOwnerOrAdmin],
     }
 
-    parser_classes = (MultiPartParser, FormParser, JSONParser)
+    def get_base_queryset(self):
+        return Article.query.options(joinedload(Article.user))
 
     def get_object(self):
         id_or_slug = self.kwargs.get('pk')
         if id_or_slug.isdigit():
-            return Article.objects.get(pk=id_or_slug)
-        return Article.objects.get(slug=id_or_slug)
+            return Article.query.filter_by(id=id_or_slug).one()
+        return Article.query.filter_by(slug=id_or_slug).one()
 
     def get_queryset(self):
         """ self.action == 'list' """
         search = self.request.query_params.get('search', None)
-        categories = self.request.query_params.getlist('category', [])
+        categories = self.request.query_params.getlist('category')
         is_active = self.request.query_params.get('is_active', None)
         me = self.request.query_params.get('me', None)
         queryset = None
@@ -78,11 +81,11 @@ class ArticleViewSet(BaseViewSet, mixins.CreateModelMixin):
             if item.is_check():
                 kwargs.update(item.get_param())
 
-        queryset = self.queryset.filter(
-            **kwargs
-        ).all().order_by('-id').distinct()
+        queryset = lookups.apply(
+            self.get_base_queryset(), Article, kwargs
+        ).order_by(Article.id.desc()).distinct()
 
-        if not queryset.exists():
+        if queryset.first() is None:
             raise NotFound(_('not_found'))
 
         return queryset

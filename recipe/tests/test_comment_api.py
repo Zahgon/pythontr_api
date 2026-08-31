@@ -1,13 +1,12 @@
-from django.urls import reverse
-from django.test import TestCase
-from django.contrib.contenttypes.models import ContentType
+from core.urls import reverse
+from core.models import ContentType
 
-from rest_framework import status
-from rest_framework.test import APIClient
+from app.api import status
+from app.api.test import APIClient, TestCase
 
 from core.models import Article
 from core.models import Comment
-from django.contrib.auth import get_user_model
+from core.models import get_user_model
 
 COMMENT_URL = reverse('recipe:comment-list')
 
@@ -75,7 +74,7 @@ class PrivateCommentApiTest(TestCase):
             "comments": [],
         }
         res = self.client.post(COMMENT_URL, content)
-        self.assertEquals(res.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
 
     def test_update_article_comment(self):
         self.is_staff = True
@@ -106,8 +105,8 @@ class PrivateCommentApiTest(TestCase):
         # &parent_id=<geçerli_parent_id> parentı varsa
 
         res = self.client.patch(url, content)
-        self.assertEquals(res.status_code, status.HTTP_200_OK)
-        self.assertEquals(res.data['content'], content['content'])
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.data['content'], content['content'])
 
     def test_update_comment_comment(self):
         self.is_staff = True
@@ -149,5 +148,5 @@ class PrivateCommentApiTest(TestCase):
         # &parent_id=<geçerli_parent_id> parentı varsa
 
         res = self.client.patch(url, content)
-        self.assertEquals(res.status_code, status.HTTP_200_OK)
-        self.assertEquals(res.data['content'], content['content'])
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.data['content'], content['content'])

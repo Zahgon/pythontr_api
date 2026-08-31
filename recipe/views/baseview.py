@@ -1,10 +1,9 @@
-from rest_framework import viewsets, mixins
-from rest_framework.authentication import TokenAuthentication
-from rest_framework.permissions import IsAuthenticated, AllowAny, IsAdminUser
-from app.authentication import CookieTokenAuthentication
+from app.api import views, mixins
+from app.api.permissions import IsAuthenticated, AllowAny, IsAdminUser
+from app.authentication import CookieTokenAuthentication, TokenAuthentication
 
 
-class BaseViewSet(viewsets.GenericViewSet,
+class BaseViewSet(views.GenericViewSet,
                   mixins.ListModelMixin,
                   mixins.RetrieveModelMixin,
                   mixins.UpdateModelMixin,

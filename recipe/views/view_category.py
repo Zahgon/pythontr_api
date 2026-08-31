@@ -1,7 +1,8 @@
-from rest_framework import mixins
-from rest_framework.permissions import (IsAuthenticatedOrReadOnly,
-                                        IsAdminUser)
+from app.api import mixins
+from app.api.permissions import (IsAuthenticatedOrReadOnly,
+                                 IsAdminUser)
 
+from core import lookups
 from core.models import Category
 
 from recipe import serializers
@@ -11,7 +12,7 @@ from .filter_param import RulesFilter, Search
 
 
 class CategoryViewSet(BaseViewSet, mixins.CreateModelMixin):
-    queryset = Category.objects.all()
+    model = Category
     serializer_class = serializers.CategorySerializer
     permission_classes_by_action = {'create': [IsAdminUser],
                                     'list': [IsAuthenticatedOrReadOnly],
@@ -20,8 +21,8 @@ class CategoryViewSet(BaseViewSet, mixins.CreateModelMixin):
     def get_object(self):
         id_or_slug = self.kwargs.get('pk')
         if id_or_slug.isdigit():
-            return Category.objects.get(pk=id_or_slug)
-        return Category.objects.get(slug=id_or_slug)
+            return Category.query.filter_by(id=id_or_slug).one()
+        return Category.query.filter_by(slug=id_or_slug).one()
 
     def get_queryset(self):
         search = self.request.query_params.get('search')
@@ -43,6 +44,8 @@ class CategoryViewSet(BaseViewSet, mixins.CreateModelMixin):
             if item.is_check():
                 kwargs.update(item.get_param())
 
-        queryset = self.queryset.filter(**kwargs).all()
+        queryset = lookups.apply(
+            self.get_base_queryset(), Category, kwargs
+        ).all()
         queryset = sorted(queryset, key=lambda x: x.full_category_name)
         return queryset

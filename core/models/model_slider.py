@@ -1,6 +1,10 @@
-from django.db import models
-from django.conf import settings
-from django.utils.text import slugify
+from flask import current_app
+
+from app.extensions import db
+from core import storage
+from core.text import slugify
+
+from .base import SaveMixin, now
 
 
 def slider_image_file_path(instance, filename):
@@ -9,30 +13,53 @@ def slider_image_file_path(instance, filename):
         "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._"
     sanitized_filename = ''.join(c for c in f_name if c in allowed_chars)
     slug = slugify(sanitized_filename)
-    file_path = f'{settings.IMAGE_ROOT}/{slug}.{ext}'
+    file_path = f'{current_app.config["IMAGE_ROOT"]}/{slug}.{ext}'
     return file_path
 
 
-class Slider(models.Model):
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now_add=True)
-    title = models.CharField(max_length=255, unique=True)
-    description = models.TextField(blank=True, null=True)
-    link = models.CharField(max_length=255, blank=True, null=True)
-    image = models.ImageField(null=True, upload_to=slider_image_file_path,
-                              blank=True)
-    user = models.ForeignKey(
-        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
-        null=True, blank=True
+class Slider(db.Model, SaveMixin):
+    __tablename__ = 'core_slider'
+    __app_label__ = 'core'
+
+    id = db.Column(db.BigInteger().with_variant(db.Integer, 'sqlite'),
+                   primary_key=True)
+    created_at = db.Column(db.DateTime, nullable=False, default=now)
+    updated_at = db.Column(db.DateTime, nullable=False, default=now)
+    title = db.Column(db.String(255), nullable=False, unique=True,
+                      default='')
+    description = db.Column(db.Text, nullable=True)
+    link = db.Column(db.String(255), nullable=True)
+    image = db.Column(db.String(100), nullable=True)
+    user_id = db.Column(
+        db.BigInteger().with_variant(db.Integer, 'sqlite'),
+        db.ForeignKey('core_user.id', ondelete='SET NULL'),
+        nullable=True,
     )
-    is_active = models.BooleanField(default=False)
-    is_approval = models.BooleanField(default=False)
-    approval_user = models.ForeignKey(
-        settings.AUTH_USER_MODEL, related_name='approved_sliders',
-        on_delete=models.SET_NULL,
-        null=True, blank=True
+    is_active = db.Column(db.Boolean, nullable=False, default=False)
+    is_approval = db.Column(db.Boolean, nullable=False, default=False)
+    approval_user_id = db.Column(
+        db.BigInteger().with_variant(db.Integer, 'sqlite'),
+        db.ForeignKey('core_user.id', ondelete='SET NULL'),
+        nullable=True,
     )
-    is_delete = models.BooleanField(default=False)
+    is_delete = db.Column(db.Boolean, nullable=False, default=False)
+
+    user = db.relationship('User', foreign_keys=[user_id])
+    approval_user = db.relationship('User', foreign_keys=[approval_user_id],
+                                    backref='approved_sliders')
+
+    @property
+    def pk(self):
+        return self.id
+
+    def save(self, *args, **kwargs):
+        stamp = now()
+        if self.created_at is None:
+            self.created_at = stamp
+        if self.updated_at is None:
+            self.updated_at = stamp
+        self.image = storage.persist(self, self.image, slider_image_file_path)
+        return super(Slider, self).save()
 
     def __str__(self):
         return self.title
@@ -41,5 +68,7 @@ class Slider(models.Model):
     def image_url(self):
         image_url = None
         if self.image:
-            image_url = self.image.url.replace(settings.APLICATION_NAME, '')
+            image_url = self.image.replace(
+                current_app.config['APLICATION_NAME'], ''
+            )
         return image_url

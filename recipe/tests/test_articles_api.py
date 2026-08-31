@@ -1,11 +1,10 @@
-from django.contrib.auth import get_user_model
-from django.urls import reverse
-from django.test import TestCase
+from sqlalchemy.orm.exc import NoResultFound
 
-from rest_framework import status
-from rest_framework.test import APIClient
+from core.models import Category, Article, get_user_model
+from core.urls import reverse
 
-from core.models import Category, Article
+from app.api import status
+from app.api.test import APIClient, TestCase
 
 # from recipe.serializers import ArticleSerializer
 
@@ -34,7 +33,7 @@ class PublicArticleApiTest(TestCase):
 
     def test_404_article_login_not_required(self):
         url = detail_url(1)
-        with self.assertRaises(Article.DoesNotExist):
+        with self.assertRaises(NoResultFound):
             self.client.get(url)
 
     def test_dont_create_article(self):
@@ -64,11 +63,11 @@ class PublicArticleApiTest(TestCase):
             content='............... bla bla ...  bla ........',
             is_active=True
         )
-        article.categories.add(category)
+        article.categories.append(category)
         url = detail_url(article.id)
 
         res = self.client.get(url)
-        self.assertEquals(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
 
 
 class PrivateArticleApiTest(TestCase):
@@ -96,7 +95,7 @@ class PrivateArticleApiTest(TestCase):
         }
 
         res = self.client.post(ARTICLES_URL, content)
-        self.assertEquals(res.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
 
     def test_update_article(self):
         self.is_staff = True
@@ -124,8 +123,8 @@ class PrivateArticleApiTest(TestCase):
         url = detail_url(article.id)
 
         res = self.client.put(url, content)
-        self.assertEquals(res.status_code, status.HTTP_200_OK)
-        self.assertEquals(res.data['title'], content['title'])
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.data['title'], content['title'])
 
     def test_dont_delete_article(self):
         self.is_staff = True
@@ -140,7 +139,7 @@ class PrivateArticleApiTest(TestCase):
             is_active=True,
             user=self.user
         )
-        article.categories.add(category)
+        article.categories.append(category)
         url = detail_url(article.id)
 
         res = self.client.delete(url)
@@ -166,7 +165,7 @@ class PrivateArticleApiTest(TestCase):
             is_active=True,
             user=self.user
         )
-        article.categories.add(category)
+        article.categories.append(category)
 
         article = Article.objects.create(
             title='Python for and wihle syntax',
@@ -176,7 +175,7 @@ class PrivateArticleApiTest(TestCase):
             is_active=True,
             user=different_user
         )
-        article.categories.add(category)
+        article.categories.append(category)
 
         article = Article.objects.create(
             title='Mongoos and Nodejs',
@@ -186,7 +185,7 @@ class PrivateArticleApiTest(TestCase):
             is_active=True,
             user=self.user
         )
-        article.categories.add(category)
+        article.categories.append(category)
         res = self.client.get(ARTICLES_URL_ME)
         self.assertEqual(res.status_code, status.HTTP_200_OK)
         self.assertEqual(len(res.data), 2)

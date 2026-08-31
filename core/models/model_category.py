@@ -1,57 +1,62 @@
-from django.db import models
+from app.extensions import db
 
-from django.conf import settings
-
-from django.utils import timezone
-from django.utils.text import slugify
+from .base import SaveMixin, now, unique_slug
 
 
-class Category(models.Model):
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now_add=True)
-    name = models.CharField(max_length=255, unique=True)
-    title = models.CharField(max_length=255, unique=True)
-    title_h1 = models.CharField(max_length=255)
-    description = models.TextField(blank=True, null=True)
-    content = models.TextField(blank=True, null=True)
-    short_name = models.CharField(max_length=100, unique=True)
-    parent_category = models.ForeignKey(
-        'self', on_delete=models.SET_NULL,
-        null=True, blank=True
+class Category(db.Model, SaveMixin):
+    __tablename__ = 'core_category'
+    __app_label__ = 'core'
+
+    id = db.Column(db.BigInteger().with_variant(db.Integer, 'sqlite'),
+                   primary_key=True)
+    created_at = db.Column(db.DateTime, nullable=False, default=now)
+    updated_at = db.Column(db.DateTime, nullable=False, default=now)
+    name = db.Column(db.String(255), nullable=False, unique=True)
+    title = db.Column(db.String(255), nullable=False, unique=True,
+                      default='')
+    title_h1 = db.Column(db.String(255), nullable=False, default='')
+    description = db.Column(db.Text, nullable=True)
+    content = db.Column(db.Text, nullable=True)
+    short_name = db.Column(db.String(100), nullable=False, unique=True)
+    parent_category_id = db.Column(
+        db.BigInteger().with_variant(db.Integer, 'sqlite'),
+        db.ForeignKey('core_category.id', ondelete='SET NULL'),
+        nullable=True,
     )
-    slug = models.SlugField(unique=True, max_length=150, editable=False)
-    sort = models.SmallIntegerField(default=0, null=True)
-    user = models.ForeignKey(
-        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
-        null=True, blank=True
+    slug = db.Column(db.String(150), nullable=False, unique=True)
+    sort = db.Column(db.SmallInteger, nullable=True, default=0)
+    user_id = db.Column(
+        db.BigInteger().with_variant(db.Integer, 'sqlite'),
+        db.ForeignKey('core_user.id', ondelete='SET NULL'),
+        nullable=True,
     )
+
+    parent_category = db.relationship(
+        'Category', remote_side=[id], backref='category_set',
+    )
+    user = db.relationship('User')
+
+    @property
+    def pk(self):
+        return self.id
 
     def get_slug(self):
-        slug = slugify(self.name.replace('ı', 'i'))
-        unique = slug
-        number = 1
-
-        while Category.objects.filter(slug=unique).exists():
-            unique = '{}-{}'.format(slug, number)
-            number += 1
-
-        return unique
+        return unique_slug(Category, Category.slug, self.name)
 
     def save(self, *args, **kwargs):
         if not self.title_h1:
             self.title_h1 = self.title
 
-        self.updated_at = timezone.now()
+        self.updated_at = now()
+        if self.created_at is None:
+            self.created_at = self.updated_at
         self.slug = self.get_slug()
 
-        return super(Category, self).save(*args, **kwargs)
+        return super(Category, self).save()
 
     @property
     def full_category_name(self):
         return self.__str__()
-
-    def __unicode__(self):
-        return self.name
 
     def __str__(self):
         full_path = [self.name]

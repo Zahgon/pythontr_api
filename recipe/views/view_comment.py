@@ -1,9 +1,8 @@
-from rest_framework import mixins
-from rest_framework.permissions import AllowAny
+from app.api import mixins
+from app.api.permissions import AllowAny
 
-from django.contrib.contenttypes.models import ContentType
-
-from core.models import Article, Comment
+from core import lookups
+from core.models import Article, Comment, ContentType
 
 from recipe.permissions import IsAuthenticatedAndOwner
 
@@ -18,7 +17,7 @@ class CommentViewSet(
     mixins.CreateModelMixin,
     mixins.UpdateModelMixin,
 ):
-    queryset = Comment.objects.all()
+    model = Comment
     serializer_class = serializers.CommentSerializer
     permission_classes_by_action = {'create': [AllowAny],
                                     'list': [AllowAny],
@@ -27,8 +26,8 @@ class CommentViewSet(
                                     }
 
     def get_queryset(self):
-        article_content_type = ContentType.objects.get_for_model(Article)
-        comment_content_type = ContentType.objects.get_for_model(Comment)
+        article_content_type = ContentType.get_for_model(Article)
+        comment_content_type = ContentType.get_for_model(Comment)
         search = self.request.query_params.get('search')
         queryset = []
         SearchKwargs = {
@@ -50,7 +49,7 @@ class CommentViewSet(
         if comment_type == 'article':
             base_kwargs.update({
                 '{0}_{1}'.format('content', 'type'): article_content_type,
-                '{0}__{1}'.format('object_id', 'in'): Article.objects.filter(
+                '{0}__{1}'.format('object_id', 'in'): Article.query.filter_by(
                     is_active=True,
                     is_delete=False
                 ).all(),
@@ -68,9 +67,9 @@ class CommentViewSet(
             if item.is_check():
                 base_kwargs.update(item.get_param())
 
-        queryset = self.queryset.filter(
-            **base_kwargs
-        ).all().order_by('-id')
+        queryset = lookups.apply(
+            self.get_base_queryset(), Comment, base_kwargs
+        ).order_by(Comment.id.desc())
 
         return queryset
 

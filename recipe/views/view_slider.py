@@ -1,9 +1,12 @@
-from rest_framework import mixins
-from rest_framework.permissions import (IsAuthenticated,
-                                        IsAuthenticatedOrReadOnly)
-from rest_framework.exceptions import NotFound
-from django.utils.translation import gettext as _
+from sqlalchemy.orm import joinedload
 
+from app.api import mixins
+from app.api.permissions import (IsAuthenticated,
+                                 IsAuthenticatedOrReadOnly)
+from app.api.exceptions import NotFound
+from flask_babel import gettext as _
+
+from core import lookups
 from core.models import Slider
 
 from recipe import serializers
@@ -14,7 +17,7 @@ from .filter_param import RulesFilter, Search, Me
 
 
 class SliderViewSet(BaseViewSet, mixins.CreateModelMixin):
-    queryset = Slider.objects.select_related('user').all()
+    model = Slider
     serializer_class = serializers.SliderSerializer
     permission_classes_by_action = {
         'list': [IsAuthenticatedOrReadOnly],
@@ -23,9 +26,12 @@ class SliderViewSet(BaseViewSet, mixins.CreateModelMixin):
         'update': [IsAuthenticatedAndOwner],
     }
 
+    def get_base_queryset(self):
+        return Slider.query.options(joinedload(Slider.user))
+
     def get_object(self):
         id = self.kwargs.get('pk')
-        return Slider.objects.get(pk=id)
+        return Slider.query.filter_by(id=id).one()
 
     def get_queryset(self):
         """ self.action == 'list' """
@@ -56,11 +62,11 @@ class SliderViewSet(BaseViewSet, mixins.CreateModelMixin):
             if item.is_check():
                 kwargs.update(item.get_param())
 
-        queryset = self.queryset.filter(
-            **kwargs
-        ).all().order_by('-id').distinct()
+        queryset = lookups.apply(
+            self.get_base_queryset(), Slider, kwargs
+        ).order_by(Slider.id.desc()).distinct()
 
-        if not queryset.exists():
+        if queryset.first() is None:
             raise NotFound(_('not_found'))
 
         return queryset

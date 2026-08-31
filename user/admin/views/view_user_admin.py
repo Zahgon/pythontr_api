@@ -1,20 +1,23 @@
-from rest_framework import viewsets, status, filters
-from rest_framework.permissions import IsAdminUser
-from rest_framework.response import Response
-from django_filters.rest_framework import DjangoFilterBackend
-from django.contrib.auth import get_user_model
-from django.utils.translation import gettext as _
+from app.api import viewsets, status, filters
+from app.api.permissions import IsAdminUser
+from app.api.response import Response
+from flask_babel import gettext as _
+from core.models import get_user_model
 from user.admin import serializers
 
 
 class AdminUserViewSet(viewsets.ModelViewSet):
     serializer_class = serializers.AdminUserListSerializer
     permission_classes = [IsAdminUser]
-    queryset = get_user_model().objects.all().order_by('-created_at')
-    filter_backends = [filters.SearchFilter, DjangoFilterBackend]
+    model = get_user_model()
+    filter_backends = [filters.SearchFilter, filters.FieldFilterBackend]
     search_fields = ['email', 'name', 'surname']
     filterset_fields = ['is_active', 'is_staff', "is_ban"]
     http_method_names = ['get', 'patch', 'delete']
+
+    def get_base_queryset(self):
+        User = get_user_model()
+        return User.query.order_by(User.created_at.desc())
 
     def get_serializer_class(self):
         if self.action == 'retrieve':
@@ -26,7 +29,7 @@ class AdminUserViewSet(viewsets.ModelViewSet):
     def get_object(self):
         id = self.kwargs.get('pk')
         User = get_user_model()
-        return User.objects.get(pk=id)
+        return User.query.filter_by(id=id).one()
 
     def destroy(self, request, *args, **kwargs):
         user = self.get_object()

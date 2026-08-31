@@ -1,9 +1,8 @@
-from django.test import TestCase
-from django.contrib.auth import get_user_model
-from django.urls import reverse
+from core.models import get_user_model
+from core.urls import reverse
 
-from rest_framework.test import APIClient
-from rest_framework import status
+from app.api import status
+from app.api.test import APIClient, TestCase
 
 
 CREATE_USER_URL = reverse('user:create')

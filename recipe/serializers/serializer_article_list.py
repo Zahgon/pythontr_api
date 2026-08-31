@@ -1,17 +1,38 @@
-from rest_framework import serializers
+from marshmallow import validates
 
-from core.models import Article
+from app.api import fields
+from app.api.serializers import Serializer
+from app.api.validators import unique_check
+from core.models import Article, Category, User
 
 
-class ArticleListSerializer(serializers.ModelSerializer):
-    image_url = serializers.ReadOnlyField()
-    username = serializers.CharField(source='user.username', read_only=True)
+class ArticleListSerializer(Serializer):
+    """Serializer for article list"""
 
-    class Meta:
-        model = Article
-        fields = ('id', 'title', 'title_h1', 'description',
-                  'image', 'read_count', 'image_url', 'slug', 'categories',
-                  'user', 'username', 'is_active', 'is_approval', 'created_at',
-                  'updated_at')
-        read_only_fields = ('id', 'slug', 'read_count', 'is_active',
-                            'created_at', 'updated_at')
+    id = fields.IntegerField(dump_only=True)
+    title = fields.CharField(required=True, max_length=255)
+    title_h1 = fields.CharField(required=True, max_length=255)
+    description = fields.CharField(required=False, allow_blank=True)
+    image = fields.ImageField(required=False, allow_none=True)
+    read_count = fields.IntegerField(dump_only=True)
+    image_url = fields.ReadOnlyField()
+    slug = fields.CharField(dump_only=True)
+    categories = fields.PrimaryKeyRelatedField(
+        Category, many=True, required=True
+    )
+    user = fields.PrimaryKeyRelatedField(
+        User, required=False, allow_none=True
+    )
+    username = fields.CharField(attribute='user.username', dump_only=True)
+    is_active = fields.BooleanField(dump_only=True)
+    is_approval = fields.BooleanField(required=False)
+    created_at = fields.DateTimeField(dump_only=True)
+    updated_at = fields.DateTimeField(dump_only=True)
+
+    @validates('title')
+    def validate_title(self, value):
+        unique_check(Article, Article.title, value, self.instance,
+                     field='title', label='article')
+
+    def create(self, validated_data):
+        return Article(**validated_data).save()

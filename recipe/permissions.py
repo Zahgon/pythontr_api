@@ -1,4 +1,7 @@
-from rest_framework.permissions import BasePermission, SAFE_METHODS
+from sqlalchemy.exc import NoResultFound
+from sqlalchemy.orm import joinedload
+
+from app.api.permissions import BasePermission, SAFE_METHODS
 
 from core.models import Article
 
@@ -35,11 +38,11 @@ class IsAuthenticatedAndOwnerOld(BasePermission):
     def has_permission(self, request, view):
         try:
             result = True
-            Article.objects.select_related('user').get(
+            Article.query.options(joinedload(Article.user)).filter_by(
                 id=view.kwargs.get('id'),
                 user_id=view.kwargs.get('user_id')
-            )
-        except Article.DoesNotExist:
+            ).one()
+        except NoResultFound:
             result = False
         if request.user.is_superuser:
             result = True

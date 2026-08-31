@@ -1,7 +1,7 @@
 import re
 
-from rest_framework import pagination
-from rest_framework.response import Response
+from app.api import pagination
+from app.api.response import Response
 
 
 class CustomPagination(pagination.PageNumberPagination):

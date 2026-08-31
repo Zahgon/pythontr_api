@@ -1,5 +1,5 @@
 [Unit]
-Description=Pythontr for Django project
+Description=Pythontr for Flask project
 After=network.target
 
 [Service]

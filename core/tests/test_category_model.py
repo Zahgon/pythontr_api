@@ -1,8 +1,9 @@
-from django.test import TestCase
-from django.contrib.auth import get_user_model
-from django.db.utils import IntegrityError
+import unittest
+
+from sqlalchemy.exc import IntegrityError
 
 from core import models
+from core.models import get_user_model
 
 
 def test_user(email='test@hotmail.com', password='123qwe'):
@@ -13,7 +14,7 @@ def test_user_other(email='test2@hotmail.com', password='123qwe'):
     return get_user_model().objects.create_user(email, password)
 
 
-class ModelTests(TestCase):
+class ModelTests(unittest.TestCase):
 
     def test_category_str(self):
         category = models.Category.objects.create(

@@ -1,5 +1,6 @@
-from django.urls import path, include
-from rest_framework.routers import DefaultRouter
+from flask import Blueprint
+
+from app.api.routers import DefaultRouter
 
 from recipe import views
 
@@ -12,6 +13,5 @@ router.register('comments', views.CommentViewSet)
 router.register('messages', views.MessageViewSet)
 app_name = 'recipe'
 
-urlpatterns = [
-    path('', include(router.urls))
-]
+blueprint = Blueprint(app_name, __name__)
+router.register_urls(blueprint)

@@ -1,22 +1,29 @@
+from unittest import TestCase
 from unittest.mock import patch
 
-from django.core.management import call_command
-from django.db.utils import OperationalError
+from sqlalchemy.exc import OperationalError
 
-from django.test import TestCase
+from core.cli import wait_for_db
+
+
+def operational_error():
+    """The driver error the command waits on, built with its required args."""
+    return OperationalError('SELECT 1', {}, Exception('database unavailable'))
 
 
 class CommandTests(TestCase):
 
-    def test_wait_for_db_ready(self):
-        with patch('django.db.utils.ConnectionHandler.__getitem__') as gi:
-            gi.return_value = True
-            call_command('wait_for_db')
-            self.assertEqual(gi.call_count, 1)
+    @patch('core.cli.ConnectionHandler.__getitem__')
+    def test_wait_for_db_ready(self, gi):
+        """Test waiting for db when db is available"""
+        gi.return_value = True
+        wait_for_db()
+        self.assertEqual(gi.call_count, 1)
 
     @patch('time.sleep', return_value=True)
-    def test_wait_for_db(self, ts):
-        with patch('django.db.utils.ConnectionHandler.__getitem__') as gi:
-            gi.side_effect = [OperationalError] * 5 + [True]
-            call_command('wait_for_db')
-            self.assertEqual(gi.call_count, 6)
+    @patch('core.cli.ConnectionHandler.__getitem__')
+    def test_wait_for_db(self, gi, ts):
+        """Test waiting for db"""
+        gi.side_effect = [operational_error()] * 5 + [True]
+        wait_for_db()
+        self.assertEqual(gi.call_count, 6)

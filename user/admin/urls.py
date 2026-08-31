@@ -1,4 +1,6 @@
-from rest_framework.routers import DefaultRouter
+from flask import Blueprint
+
+from app.api.routers import DefaultRouter
 from user.admin.views.view_user_admin import AdminUserViewSet
 from user.admin.views.view_page_visit import PageVisitViewSet
 
@@ -8,4 +10,5 @@ router = DefaultRouter()
 router.register('users', AdminUserViewSet, basename='users')
 router.register('page-visits', PageVisitViewSet, basename='page-visits')
 
-urlpatterns = router.urls
+blueprint = Blueprint(app_name, __name__)
+router.register_urls(blueprint)

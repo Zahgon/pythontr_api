@@ -1,58 +1,52 @@
-import sys
 import requests
-from django.conf import settings
-from django.utils.translation import gettext_lazy as _
+from flask import current_app
+from flask_babel import gettext as _
+from marshmallow import ValidationError, validates
 
-from rest_framework import serializers
+from app import settings
+from app.api import fields
+from app.api.serializers import Serializer
+from core.models import Comment, ContentType, User
 
-from core.models import Comment
 
+class CommentSerializer(Serializer):
+    """Serializer for comment"""
 
-class CommentSerializer(serializers.ModelSerializer):
-    comments = serializers.SerializerMethodField()
-    if not settings.DEBUG and 'test' not in sys.argv:
-        captcha = serializers.CharField(write_only=True, required=True)
+    id = fields.IntegerField(dump_only=True)
+    content = fields.CharField(required=False, allow_blank=True)
+    email = fields.CharField(required=True, max_length=100)
+    name = fields.CharField(required=True, max_length=50)
+    ip = fields.CharField(required=True, max_length=100)
+    user = fields.PrimaryKeyRelatedField(
+        User, required=False, allow_none=True
+    )
+    content_type = fields.PrimaryKeyRelatedField(ContentType, required=True)
+    object_id = fields.IntegerField(required=True)
+    comments = fields.SerializerMethodField()
 
+    if settings.CAPTCHA_REQUIRED:
+        captcha = fields.CharField(required=True, load_only=True)
+
+        @validates('captcha')
         def validate_captcha(self, value):
-            recaptcha_url = settings.RECAPTCHA_URL
-            payload = {
-                "secret": settings.RECAPTCHA_SECRET_KEY,
-                "response": value
-            }
-            response = requests.post(recaptcha_url, data=payload)
+            response = requests.post(
+                current_app.config['RECAPTCHA_URL'],
+                data={
+                    "secret": current_app.config['RECAPTCHA_SECRET_KEY'],
+                    "response": value,
+                },
+            )
             result = response.json()
-
             if not result.get("success"):
-                raise serializers.ValidationError(
-                    _("recaptcha_verification_failed"))
-
-            return value
+                raise ValidationError(_("recaptcha_verification_failed"))
 
     def get_comments(self, obj):
-        comments = Comment.objects.filter(
-            content_type__model='comment',
-            object_id=obj.id
+        content_type = ContentType.get_for_model(Comment)
+        replies = Comment.query.filter(
+            Comment.content_type_id == content_type.id,
+            Comment.object_id == obj.id,
         )
+        return CommentSerializer(context=self.context, many=True).dump(replies)
 
-        serializer = CommentSerializer(
-            comments,
-            many=True,
-            context=self.context
-        )
-        return serializer.data
-
-    class Meta:
-        model = Comment
-        fields = [
-            'id',
-            'content',
-            'email',
-            'name',
-            'ip',
-            'user',
-            'content_type',
-            'object_id',
-            'comments',
-        ]
-        if not settings.DEBUG and 'test' not in sys.argv:
-            fields.append('captcha')
+    def create(self, validated_data):
+        return Comment(**validated_data).save()

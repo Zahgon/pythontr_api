@@ -1,67 +1,79 @@
-import sys
 import requests
 
-from django.conf import settings
-from django.contrib.auth import get_user_model, authenticate
-from django.contrib.auth.tokens import default_token_generator
-from django.utils.translation import gettext_lazy as _
-from django.utils.http import urlsafe_base64_decode
-from django.utils.encoding import force_str
+from flask import current_app
+from flask_babel import gettext as _
 
-from rest_framework import serializers
+from marshmallow import ValidationError, validates
+from sqlalchemy.orm.exc import NoResultFound
 
+from app import settings
+from app.api import fields
+from app.api.serializers import Serializer
+from app.api.validators import unique_check
+
+from core.auth import authenticate
+from core.tokens import default_token_generator, force_str, \
+    urlsafe_base64_decode
 from core.models import User
 
 
-class UserSerializer(serializers.ModelSerializer):
-    image_url = serializers.ReadOnlyField()
-    is_staff = serializers.BooleanField(required=False)
-    confirm_password = serializers.CharField(
-        write_only=True,
-        required=False,
-        style={'input_type': 'password'}
+class UserSerializer(Serializer):
+    email = fields.EmailField(required=True, max_length=255)
+    password = fields.CharField(
+        required=True,
+        load_only=True,
+        min_length=5,
     )
-    current_password = serializers.CharField(
-        write_only=True,
+    confirm_password = fields.CharField(
+        load_only=True,
         required=False,
-        style={'input_type': 'password'}
     )
-    if not settings.DEBUG and 'test' not in sys.argv:
-        captcha = serializers.CharField(write_only=True, required=True)
+    username = fields.CharField(required=True, max_length=255)
+    name = fields.CharField(required=False, allow_blank=True, max_length=255)
+    surname = fields.CharField(
+        required=False, allow_blank=True, max_length=255
+    )
+    image = fields.ImageField(required=False, allow_none=True)
+    about_me = fields.CharField(required=False, allow_blank=True)
+    linkedin = fields.CharField(
+        required=False, allow_blank=True, max_length=255)
+    github = fields.CharField(required=False, allow_blank=True, max_length=255)
+    is_notification_email = fields.BooleanField(required=False)
+    image_url = fields.ReadOnlyField()
+    slug = fields.CharField(dump_only=True)
+    is_staff = fields.BooleanField(required=False)
+    current_password = fields.CharField(
+        load_only=True,
+        required=False,
+    )
+    if settings.CAPTCHA_REQUIRED:
+        captcha = fields.CharField(load_only=True, required=True)
 
+        @validates('captcha')
         def validate_captcha(self, value):
-            recaptcha_url = settings.RECAPTCHA_URL
+            recaptcha_url = current_app.config['RECAPTCHA_URL']
             payload = {
-                "secret": settings.RECAPTCHA_SECRET_KEY,
+                "secret": current_app.config['RECAPTCHA_SECRET_KEY'],
                 "response": value
             }
             response = requests.post(recaptcha_url, data=payload)
             result = response.json()
 
             if not result.get("success"):
-                raise serializers.ValidationError(
+                raise ValidationError(
                     _("recaptcha_verification_failed"))
 
             return value
 
-    class Meta:
-        model = get_user_model()
-        fields = [
-            'email', 'password', 'confirm_password', 'username',
-            'name', 'surname', 'image', 'about_me', 'linkedin',
-            'github', 'is_notification_email', 'image_url', 'slug',
-            'is_staff', 'current_password',
-        ]
-        if not settings.DEBUG and 'test' not in sys.argv:
-            fields.append('captcha')
+    @validates('email')
+    def validate_email_unique(self, value):
+        unique_check(User, User.email, value, self.instance,
+                     field='email', label='user')
 
-        read_only_fields = ('id', 'slug')
-        extra_kwargs = {
-            'password': {
-                'write_only': True, 'min_length': 5,
-                'style': {'input_type': 'password'}
-            },
-        }
+    @validates('username')
+    def validate_username_unique(self, value):
+        unique_check(User, User.username, value, self.instance,
+                     field='username', label='user')
 
     def validate(self, data):
         password = data.get('password')
@@ -70,36 +82,39 @@ class UserSerializer(serializers.ModelSerializer):
             current_password = data.get('current_password')
 
             if not confirm_password:
-                raise serializers.ValidationError({
-                    'confirm_password': _('please_confirm_your_password')
+                raise ValidationError({
+                    'confirm_password': [_('please_confirm_your_password')]
                 })
 
             if password != confirm_password:
-                raise serializers.ValidationError({
-                    "confirm_password": _("passwords_do_not_match")
+                raise ValidationError({
+                    "confirm_password": [_("passwords_do_not_match")]
                     })
 
             if self.context['request'].method in ['PUT', 'PATCH']:
                 if not current_password:
-                    raise serializers.ValidationError({
-                        'current_password': _(
+                    raise ValidationError({
+                        'current_password': [_(
                             'please_enter_your_current_password'
-                        )
+                        )]
                     })
 
                 user = self.context['request'].user
                 if not user.check_password(current_password):
-                    raise serializers.ValidationError({
-                        'current_password': _('current_password_is_incorrect')
+                    raise ValidationError({
+                        'current_password': [
+                            _('current_password_is_incorrect')
+                        ]
                     })
 
         return data
 
+    @validates('is_staff')
     def validate_is_staff(self, value):
         request = self.context.get('request')
         if self.instance and request.method in ['PUT', 'PATCH']:
             if value != self.instance.is_staff and not request.user.is_staff:
-                raise serializers.ValidationError(
+                raise ValidationError(
                     _('only_staff_can_modify_staff_status'))
         return value
 
@@ -107,9 +122,9 @@ class UserSerializer(serializers.ModelSerializer):
         validated_data['is_staff'] = False
         password = validated_data.pop('password')
         validated_data.pop('confirm_password')
-        if not settings.DEBUG and 'test' not in sys.argv:
+        if settings.CAPTCHA_REQUIRED:
             validated_data.pop('captcha')
-        return get_user_model().objects.create_user(
+        return User.objects.create_user(
             password=password,
             **validated_data
         )
@@ -127,28 +142,29 @@ class UserSerializer(serializers.ModelSerializer):
         return super().update(instance, validated_data)
 
 
-class AuthTokenSerializer(serializers.Serializer):
+class AuthTokenSerializer(Serializer):
     """Serializer for the user authentication object"""
-    email = serializers.CharField()
-    password = serializers.CharField(
-        style={'input_type': 'password'},
+    email = fields.CharField(required=True)
+    password = fields.CharField(
+        required=True,
         trim_whitespace=False
     )
 
-    if not settings.DEBUG and 'test' not in sys.argv:
-        captcha = serializers.CharField(write_only=True, required=True)
+    if settings.CAPTCHA_REQUIRED:
+        captcha = fields.CharField(load_only=True, required=True)
 
+        @validates('captcha')
         def validate_captcha(self, value):
-            recaptcha_url = settings.RECAPTCHA_URL
+            recaptcha_url = current_app.config['RECAPTCHA_URL']
             payload = {
-                "secret": settings.RECAPTCHA_SECRET_KEY,
+                "secret": current_app.config['RECAPTCHA_SECRET_KEY'],
                 "response": value
             }
             response = requests.post(recaptcha_url, data=payload)
             result = response.json()
 
             if not result.get("success"):
-                raise serializers.ValidationError(
+                raise ValidationError(
                     _("recaptcha_verification_failed"))
 
             return value
@@ -165,104 +181,108 @@ class AuthTokenSerializer(serializers.Serializer):
         )
         if not user:
             msg = _('unable_to_authenticate_with_provided_credentials')
-            raise serializers.ValidationError(msg, code='authentication')
+            raise ValidationError({'non_field_errors': [msg]})
 
         attrs['user'] = user
         return attrs
 
 
-class PasswordResetSerializer(serializers.Serializer):
-    email = serializers.EmailField()
+class PasswordResetSerializer(Serializer):
+    email = fields.EmailField(required=True)
 
-    if not settings.DEBUG and 'test' not in sys.argv:
-        captcha = serializers.CharField(write_only=True, required=True)
+    if settings.CAPTCHA_REQUIRED:
+        captcha = fields.CharField(load_only=True, required=True)
 
+        @validates('captcha')
         def validate_captcha(self, value):
-            recaptcha_url = settings.RECAPTCHA_URL
+            recaptcha_url = current_app.config['RECAPTCHA_URL']
             payload = {
-                "secret": settings.RECAPTCHA_SECRET_KEY,
+                "secret": current_app.config['RECAPTCHA_SECRET_KEY'],
                 "response": value
             }
             response = requests.post(recaptcha_url, data=payload)
             result = response.json()
             if not result.get("success"):
-                raise serializers.ValidationError(
+                raise ValidationError(
                     _("recaptcha_verification_failed"))
             return value
 
+    @validates('email')
     def validate_email(self, value):
         try:
-            User.objects.get(email=value)
-        except User.DoesNotExist:
-            raise serializers.ValidationError({"error": _('email_not_found')})
+            User.query.filter_by(email=value).one()
+        except NoResultFound:
+            raise ValidationError({"error": _('email_not_found')})
         return value
 
 
-class PasswordResetConfirmSerializer(serializers.Serializer):
-    password = serializers.CharField(
-        write_only=True,
+class PasswordResetConfirmSerializer(Serializer):
+    password = fields.CharField(
+        required=True,
+        load_only=True,
         min_length=8,
-        style={'input_type': 'password'}
     )
-    confirm_password = serializers.CharField(
-        write_only=True,
-        style={'input_type': 'password'}
+    confirm_password = fields.CharField(
+        required=True,
+        load_only=True,
     )
-    token = serializers.CharField()
-    uidb64 = serializers.CharField()
+    token = fields.CharField(required=True)
+    uidb64 = fields.CharField(required=True)
 
-    if not settings.DEBUG and 'test' not in sys.argv:
-        captcha = serializers.CharField(write_only=True, required=True)
+    if settings.CAPTCHA_REQUIRED:
+        captcha = fields.CharField(load_only=True, required=True)
 
+        @validates('captcha')
         def validate_captcha(self, value):
-            recaptcha_url = settings.RECAPTCHA_URL
+            recaptcha_url = current_app.config['RECAPTCHA_URL']
             payload = {
-                "secret": settings.RECAPTCHA_SECRET_KEY,
+                "secret": current_app.config['RECAPTCHA_SECRET_KEY'],
                 "response": value
             }
             response = requests.post(recaptcha_url, data=payload)
             result = response.json()
             if not result.get("success"):
-                raise serializers.ValidationError(
+                raise ValidationError(
                     _("recaptcha_verification_failed"))
             return value
 
     def validate(self, data):
         if data['password'] != data['confirm_password']:
-            raise serializers.ValidationError(
-                {'confirm_password': _('passwords_do_not_match')}
+            raise ValidationError(
+                {'confirm_password': [_('passwords_do_not_match')]}
             )
         try:
             uid = force_str(urlsafe_base64_decode(data['uidb64']))
-            user = User.objects.get(pk=uid)
-        except (TypeError, ValueError, User.DoesNotExist):
-            raise serializers.ValidationError({'error': _('invalid_link')})
+            user = User.query.filter_by(id=int(uid)).one()
+        except (TypeError, ValueError, NoResultFound):
+            raise ValidationError({'error': [_('invalid_link')]})
 
         if not default_token_generator.check_token(user, data['token']):
-            raise serializers.ValidationError(
-                {'error': _('invalid_link_or_expired')})
+            raise ValidationError(
+                {'error': [_('invalid_link_or_expired')]})
 
         data['user'] = user
         return data
 
 
-class ResendActivationSerializer(serializers.Serializer):
-    email = serializers.EmailField()
+class ResendActivationSerializer(Serializer):
+    email = fields.EmailField(required=True)
 
-    if not settings.DEBUG and 'test' not in sys.argv:
-        captcha = serializers.CharField(write_only=True, required=True)
+    if settings.CAPTCHA_REQUIRED:
+        captcha = fields.CharField(load_only=True, required=True)
 
+        @validates('captcha')
         def validate_captcha(self, value):
-            recaptcha_url = settings.RECAPTCHA_URL
+            recaptcha_url = current_app.config['RECAPTCHA_URL']
             payload = {
-                "secret": settings.RECAPTCHA_SECRET_KEY,
+                "secret": current_app.config['RECAPTCHA_SECRET_KEY'],
                 "response": value
             }
             response = requests.post(recaptcha_url, data=payload)
             result = response.json()
 
             if not result.get("success"):
-                raise serializers.ValidationError(
+                raise ValidationError(
                     _("recaptcha_verification_failed"))
 
             return value

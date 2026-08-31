@@ -4,14 +4,14 @@ import json
 from datetime import timedelta
 from user_agents import parse
 
-from rest_framework.response import Response
-from rest_framework import viewsets, permissions, status
-from rest_framework.decorators import action
+from app.api.response import Response
+from app.api import viewsets, permissions, status
+from app.api.decorators import action
 
-from django.utils import timezone
-from django.db.models import F, Q
-from django.db.models import Count, Avg
-from django.db.models.functions import ExtractHour
+from app.extensions import db
+from core import lookups
+from core.aggregates import Avg, Count, ExtractHour, queryset as aggregate
+from core.models.base import now as timezone_now
 
 from core.models.model_page_visit import PageVisit
 from core.models.model_article import Article
@@ -20,7 +20,7 @@ from user.admin import serializers
 
 
 class PageVisitViewSet(viewsets.ModelViewSet):
-    queryset = PageVisit.objects.all()
+    model = PageVisit
     serializer_class = serializers.PageVisitSerializer
 
     def get_permissions(self):
@@ -56,19 +56,23 @@ class PageVisitViewSet(viewsets.ModelViewSet):
         if ip_address in ('127.0.0.1', '::1', 'localhost'):
             return None
 
+        body = request.get_data()
         try:
-            body_data = json.loads(request.body) if request.body else {}
+            body_data = json.loads(body) if body else {}
         except json.JSONDecodeError:
             body_data = {}
 
         path = body_data.get('path', request.path)
         content_id = None
 
-        if match := re.search(r'(.*?)-(\d+)$', path):
+        match = re.search(r'(.*?)-(\d+)$', path)
+        if match:
             content_id = match.group(2)
-            Article.objects.filter(pk=content_id).update(
-                read_count=F('read_count') + 1
+            Article.query.filter_by(id=content_id).update(
+                {Article.read_count: Article.read_count + 1},
+                synchronize_session=False
             )
+            db.session.commit()
 
         return {
             'path': path,
@@ -97,11 +101,9 @@ class PageVisitViewSet(viewsets.ModelViewSet):
 
         content_owner = None
         if data['content_id']:
-            try:
-                content = Article.objects.get(id=data['content_id'])
+            content = Article.query.filter_by(id=data['content_id']).first()
+            if content is not None:
                 content_owner = content.user
-            except Article.DoesNotExist:
-                pass
 
         page_visit = PageVisit(
             # user=request.user if request.user.is_authenticated else None,
@@ -133,7 +135,7 @@ class PageVisitViewSet(viewsets.ModelViewSet):
 
     def _get_date_range(self, period):
         """Calculate date range for a given period"""
-        now = timezone.now()
+        now = timezone_now()
         if period == 'day':
             start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
         elif period == 'week':
@@ -160,24 +162,25 @@ class PageVisitViewSet(viewsets.ModelViewSet):
 
         # Date filter
         if start_date and end_date:
-            queryset = queryset.filter(
-                timestamp__range=[start_date, end_date])
+            queryset = lookups.apply(queryset, PageVisit, {
+                'timestamp__range': [start_date, end_date]})
         elif period:
             start_date, end_date = self._get_date_range(period)
             if start_date and end_date:
-                queryset = queryset.filter(
-                    timestamp__range=[start_date, end_date])
+                queryset = lookups.apply(queryset, PageVisit, {
+                    'timestamp__range': [start_date, end_date]})
 
         # User filter
         if user_id:
-            queryset = queryset.filter(user_id=user_id)
+            queryset = lookups.apply(queryset, PageVisit, {'user_id': user_id})
 
         return queryset
 
     @action(detail=False, methods=['GET'])
     def visitor_statistics(self, request):
         """Visitor statistics"""
-        queryset = self._filter_queryset(PageVisit.objects.all(), request)
+        queryset = self._filter_queryset(PageVisit.query, request)
+        queryset = aggregate(queryset, PageVisit)
 
         stats = {
             'period_info': {
@@ -208,9 +211,10 @@ class PageVisitViewSet(viewsets.ModelViewSet):
     def content_performance(self, request):
         """Content performance metrics"""
         queryset = self._filter_queryset(
-            PageVisit.objects.filter(content_id__isnull=False),
+            PageVisit.query.filter(PageVisit.content_id.isnot(None)),
             request
         )
+        queryset = aggregate(queryset, PageVisit)
 
         performance = list(queryset.values(
             'content_id'
@@ -234,11 +238,12 @@ class PageVisitViewSet(viewsets.ModelViewSet):
     def referrer_analysis(self, request):
         """Referrer analysis"""
         queryset = self._filter_queryset(
-            PageVisit.objects.exclude(
-                Q(referrer__isnull=True) | Q(referrer='')
+            PageVisit.query.filter(
+                PageVisit.referrer.isnot(None), PageVisit.referrer != ''
             ),
             request
         )
+        queryset = aggregate(queryset, PageVisit)
 
         referrers = list(queryset.values('referrer').annotate(
             visit_count=Count('id'),

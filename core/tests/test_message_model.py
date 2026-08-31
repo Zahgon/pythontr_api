@@ -1,15 +1,14 @@
-from django.test import TestCase
-from django.contrib.auth import get_user_model
-from django.db.models import Q
+import unittest
 
-from core.models import Message
+from core.lookups import Q
+from core.models import Message, get_user_model
 
 
 def test_user(email='test@hotmail.com', password='123qwe'):
     return get_user_model().objects.create_user(email, password)
 
 
-class ModelTests(TestCase):
+class ModelTests(unittest.TestCase):
 
     def test_message_str(self):
         user = test_user('user@hotmail.com')

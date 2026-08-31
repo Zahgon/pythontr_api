@@ -1,8 +1,9 @@
-from rest_framework import mixins
-from rest_framework.permissions import IsAuthenticated
+from app.api import mixins
+from app.api.permissions import IsAuthenticated
 
-from django.db.models import Q
+from sqlalchemy import or_
 
+from core import lookups
 from core.models import Message
 
 from recipe import serializers
@@ -13,13 +14,16 @@ from .filter_param import RulesFilter, Search, Inbox, Outbox
 
 
 class MessageViewSet(BaseViewSet, mixins.CreateModelMixin):
-    queryset = Message.objects
+    model = Message
     serializer_class = serializers.MessageSerializer
     permission_classes_by_action = {
         'list': [IsAuthenticatedAndOwner],
         'retrieve': [IsAuthenticatedAndOwner],
         'create': [IsAuthenticated]
     }
+
+    def get_base_queryset(self):
+        return Message.objects.all()
 
     def get_queryset(self):
         search = self.request.query_params.get('search', None)
@@ -54,11 +58,13 @@ class MessageViewSet(BaseViewSet, mixins.CreateModelMixin):
             if item.is_check():
                 kwargs.update(item.get_param())
 
-        queryset = self.queryset.filter(
-            **kwargs
+        queryset = lookups.apply(
+            self.get_base_queryset(), Message, kwargs
         ).filter(
-            Q(user=self.request.user) |
-            Q(sender=self.request.user),
-        ).all().order_by('-id').distinct().all()
+            or_(
+                Message.user == self.request.user,
+                Message.sender == self.request.user,
+            )
+        ).order_by(Message.id.desc()).distinct()
 
         return queryset

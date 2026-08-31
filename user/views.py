@@ -1,26 +1,24 @@
 
 from smtplib import SMTPException
-from rest_framework import generics, authentication, permissions
-from rest_framework.authtoken.views import ObtainAuthToken
-from rest_framework.settings import api_settings
-from rest_framework.response import Response
-from rest_framework import status
 
-from django.core.mail import send_mail
-from django.conf import settings
-from django.contrib.auth import get_user_model
-from django.contrib.auth.tokens import default_token_generator
-from django.utils.encoding import force_bytes, force_str
-from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
-from django.utils.translation import gettext_lazy as _
+from flask import current_app
+from flask_babel import gettext as _
+from sqlalchemy.orm.exc import NoResultFound
 
+from app.api import views as generics, permissions
+from app.api.authtoken import ObtainAuthToken
+from app.api.response import Response
+from app.api import status
+from app.mail import send_mail
+
+from app import authentication
 from app.authentication import CookieTokenAuthentication
+from core.tokens import default_token_generator, force_bytes, force_str, \
+    urlsafe_base64_encode, urlsafe_base64_decode
 from user.serializers import UserSerializer, AuthTokenSerializer, \
     PasswordResetSerializer, PasswordResetConfirmSerializer, \
     ResendActivationSerializer
-from core.models import ActivationCode
-
-User = get_user_model()
+from core.models import ActivationCode, User
 
 
 class CreateUserView(generics.CreateAPIView):
@@ -33,11 +31,11 @@ class CreateUserView(generics.CreateAPIView):
             send_mail(
                 _('welcome_to_www'),
                 _('welcome_to_www_message').format(
-                    link=f'{settings.SITE_URL}/register/activate/'
-                         f'{activation.code}',
+                    link=f'{current_app.config["SITE_URL"]}'
+                         f'/register/activate/{activation.code}',
                     expires_at=activation.expires_at.strftime("%d/%m/%Y %H:%M")
                 ),
-                settings.DEFAULT_FROM_EMAIL,
+                current_app.config['MAIL_DEFAULT_SENDER'],
                 [user.email],
                 fail_silently=False,
             )
@@ -50,7 +48,6 @@ class CreateUserView(generics.CreateAPIView):
 
 class CreateTokenView(ObtainAuthToken):
     serializer_class = AuthTokenSerializer
-    renderer_classes = api_settings.DEFAULT_RENDERER_CLASSES
 
 
 class ManageUserView(generics.RetrieveUpdateAPIView):
@@ -71,10 +68,10 @@ class ManageUserView(generics.RetrieveUpdateAPIView):
 class ActivateUserView(generics.GenericAPIView):
     def get(self, request, code):
         try:
-            activation = ActivationCode.objects.get(
-                code=code,
+            activation = ActivationCode.query.filter_by(
+                code=str(code),
                 is_used=False
-            )
+            ).one()
 
             if activation.is_expired:
                 return Response(
@@ -94,7 +91,7 @@ class ActivateUserView(generics.GenericAPIView):
                 status=status.HTTP_200_OK
             )
 
-        except ActivationCode.DoesNotExist:
+        except NoResultFound:
             return Response(
                 {'error': _('activation_code_is_invalid')},
                 status=status.HTTP_400_BAD_REQUEST
@@ -111,17 +108,17 @@ class ResendActivationView(generics.GenericAPIView):
         email = serializer.validated_data['email']
 
         try:
-            user = User.objects.get(email=email, is_active=False)
+            user = User.query.filter_by(email=email, is_active=False).one()
             activation = ActivationCode.create_activation_code(user)
 
             send_mail(
                 _('new_activation_code_title'),
                 _('new_activation_code_message').format(
-                    link=f'{settings.SITE_URL}/register/activate/'
-                         f'{activation.code}',
+                    link=f'{current_app.config["SITE_URL"]}'
+                         f'/register/activate/{activation.code}',
                     expires_at=activation.expires_at.strftime("%d/%m/%Y %H:%M")
                 ),
-                settings.DEFAULT_FROM_EMAIL,
+                current_app.config['MAIL_DEFAULT_SENDER'],
                 [user.email],
                 fail_silently=False,
             )
@@ -131,7 +128,7 @@ class ResendActivationView(generics.GenericAPIView):
                 status=status.HTTP_200_OK
             )
 
-        except User.DoesNotExist:
+        except NoResultFound:
             return Response(
                 {'error': _('user_not_found_with_active_code')},
                 status=status.HTTP_400_BAD_REQUEST
@@ -151,7 +148,7 @@ class PasswordResetView(generics.GenericAPIView):
         serializer.is_valid(raise_exception=True)
 
         email = serializer.validated_data['email']
-        user = User.objects.get(email=email)
+        user = User.query.filter_by(email=email).one()
 
         # Token and UID
         token = default_token_generator.make_token(user)
@@ -159,11 +156,12 @@ class PasswordResetView(generics.GenericAPIView):
 
         # Send Email
         try:
-            reset_url = f"{settings.SITE_URL}/forgot-password/{uidb64}/{token}"
+            site_url = current_app.config['SITE_URL']
+            reset_url = f"{site_url}/forgot-password/{uidb64}/{token}"
             send_mail(
                 _('password_reset_title'),
                 _('password_reset_message').format(link=reset_url),
-                settings.DEFAULT_FROM_EMAIL,
+                current_app.config['MAIL_DEFAULT_SENDER'],
                 [email],
                 fail_silently=False,
             )
@@ -185,7 +183,7 @@ class PasswordResetConfirmView(generics.GenericAPIView):
         try:
             # Check Token and UID
             uid = force_str(urlsafe_base64_decode(uidb64))
-            user = User.objects.get(pk=uid)
+            user = User.query.filter_by(id=int(uid)).one()
 
             if not default_token_generator.check_token(user, token):
                 return Response(
@@ -195,7 +193,7 @@ class PasswordResetConfirmView(generics.GenericAPIView):
 
             return Response({'valid': True})
 
-        except (TypeError, ValueError, User.DoesNotExist):
+        except (TypeError, ValueError, NoResultFound):
             return Response(
                 {'error': _('invalid_link')},
                 status=status.HTTP_400_BAD_REQUEST

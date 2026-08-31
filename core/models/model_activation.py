@@ -1,35 +1,54 @@
 import uuid
 
-from django.db import models
-from django.contrib.auth import get_user_model
-from django.utils import timezone
-
 from datetime import timedelta
 
-User = get_user_model()
+from app.extensions import db
+
+from .base import SaveMixin, now
+from .model_user import User  # noqa: F401  (kept for import parity)
 
 
-class ActivationCode(models.Model):
-    user = models.ForeignKey(User, on_delete=models.CASCADE)
-    code = models.UUIDField(default=uuid.uuid4, editable=False)
-    created_at = models.DateTimeField(auto_now_add=True)
-    expires_at = models.DateTimeField()
-    is_used = models.BooleanField(default=False)
+class ActivationCode(db.Model, SaveMixin):
+    __tablename__ = 'core_activationcode'
+    __app_label__ = 'core'
+
+    id = db.Column(db.BigInteger().with_variant(db.Integer, 'sqlite'),
+                   primary_key=True)
+    user_id = db.Column(
+        db.BigInteger().with_variant(db.Integer, 'sqlite'),
+        db.ForeignKey('core_user.id', ondelete='CASCADE'),
+        nullable=False,
+    )
+    code = db.Column(
+        db.String(36), nullable=False, default=lambda: str(uuid.uuid4())
+    )
+    created_at = db.Column(db.DateTime, nullable=False, default=now)
+    expires_at = db.Column(db.DateTime, nullable=False)
+    is_used = db.Column(db.Boolean, nullable=False, default=False)
+
+    user = db.relationship('User')
+
+    @property
+    def pk(self):
+        return self.id
 
     def save(self, *args, **kwargs):
         if not self.expires_at:
-            self.expires_at = timezone.now() + timedelta(hours=24)
-        super().save(*args, **kwargs)
+            self.expires_at = now() + timedelta(hours=24)
+        if self.code is None:
+            self.code = str(uuid.uuid4())
+        if self.created_at is None:
+            self.created_at = now()
+        return super().save()
 
     @property
     def is_expired(self):
-        now = timezone.now()
-        expires_at = self.expires_at
-        if self.expires_at.tzinfo is None:
-            expires_at = timezone.make_aware(self.expires_at)
-        return now > expires_at
+        return now() > self.expires_at
 
     @classmethod
     def create_activation_code(cls, user):
-        cls.objects.filter(user=user, is_used=False).update(is_used=True)
-        return cls.objects.create(user=user)
+        cls.query.filter_by(user_id=user.id, is_used=False).update(
+            {'is_used': True}
+        )
+        db.session.commit()
+        return cls(user_id=user.id).save()

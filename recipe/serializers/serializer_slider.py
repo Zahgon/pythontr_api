@@ -1,17 +1,41 @@
-from rest_framework import serializers
+from marshmallow import validates
 
-from core.models import Slider
+from app.api import fields
+from app.api.serializers import Serializer
+from app.api.validators import unique_check
+from core.models import Slider, User
 
 
-class SliderSerializer(serializers.ModelSerializer):
-    image_url = serializers.ReadOnlyField()
-    username = serializers.CharField(source='user.username', read_only=True)
+class SliderSerializer(Serializer):
+    """Serializer for slider"""
 
-    class Meta:
-        model = Slider
-        fields = ('id', 'title', 'description', 'link',
-                  'image', 'image_url', 'user', 'username', 'is_active',
-                  'is_approval', 'approval_user', 'is_delete', 'created_at',
-                  'updated_at')
-        read_only_fields = ('id', 'is_delete', 'is_active', 'created_at',
-                            'updated_at')
+    id = fields.IntegerField(dump_only=True)
+    title = fields.CharField(required=True, max_length=255)
+    description = fields.CharField(
+        required=False, allow_none=True, allow_blank=True
+    )
+    link = fields.CharField(
+        required=False, allow_none=True, allow_blank=True, max_length=255
+    )
+    image = fields.ImageField(required=False, allow_none=True)
+    image_url = fields.ReadOnlyField()
+    user = fields.PrimaryKeyRelatedField(
+        User, required=False, allow_none=True
+    )
+    username = fields.CharField(attribute='user.username', dump_only=True)
+    is_active = fields.BooleanField(dump_only=True)
+    is_approval = fields.BooleanField(required=False)
+    approval_user = fields.PrimaryKeyRelatedField(
+        User, required=False, allow_none=True
+    )
+    is_delete = fields.BooleanField(dump_only=True)
+    created_at = fields.DateTimeField(dump_only=True)
+    updated_at = fields.DateTimeField(dump_only=True)
+
+    @validates('title')
+    def validate_title(self, value):
+        unique_check(Slider, Slider.title, value, self.instance,
+                     field='title', label='slider')
+
+    def create(self, validated_data):
+        return Slider(**validated_data).save()

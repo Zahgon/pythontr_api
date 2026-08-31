@@ -1,8 +1,8 @@
-from django.test import TestCase
-from django.contrib.auth import get_user_model
-from django.db.utils import IntegrityError
+import unittest
 
-from core.models import Slider
+from sqlalchemy.exc import IntegrityError
+
+from core.models import Slider, get_user_model
 
 
 def test_user(email='testarticle@hotmail.com', password='123qwe'):
@@ -13,7 +13,7 @@ def test_user_other(email='testarticleother@hotmail.com', password='123qwe'):
     return get_user_model().objects.create_user(email, password)
 
 
-class ModelTests(TestCase):
+class ModelTests(unittest.TestCase):
 
     def test_slider_str(self):
         user = test_user_other()

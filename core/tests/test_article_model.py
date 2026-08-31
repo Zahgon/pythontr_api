@@ -1,8 +1,8 @@
-from django.test import TestCase
-from django.contrib.auth import get_user_model
-from django.db.utils import IntegrityError
+import unittest
 
-from core.models import Category, Article
+from sqlalchemy.exc import IntegrityError
+
+from core.models import Category, Article, get_user_model
 
 
 def test_user(email='testarticle@hotmail.com', password='123qwe'):
@@ -23,7 +23,7 @@ def test_category(name='Python Article Programlama',
     )
 
 
-class ModelTests(TestCase):
+class ModelTests(unittest.TestCase):
 
     def test_article_str(self):
         category = test_category()
@@ -34,7 +34,7 @@ class ModelTests(TestCase):
             description='python',
             approval_user=user,
         )
-        article.categories.add(category)
+        article.categories.append(category)
 
         self.assertEqual(str(article), article.title)
 

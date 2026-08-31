@@ -1,19 +1,25 @@
-from django.db import models
-from django.contrib.auth import get_user_model
+from app.extensions import db
+
+from .base import SaveMixin, now
 
 
-class PageVisit(models.Model):
-    user = models.ForeignKey(
-        get_user_model(),
-        on_delete=models.CASCADE,
-        null=True, blank=True
+class PageVisit(db.Model, SaveMixin):
+    __tablename__ = 'core_pagevisit'
+    __app_label__ = 'core'
+
+    id = db.Column(db.BigInteger().with_variant(db.Integer, 'sqlite'),
+                   primary_key=True)
+    user_id = db.Column(
+        db.BigInteger().with_variant(db.Integer, 'sqlite'),
+        db.ForeignKey('core_user.id', ondelete='CASCADE'),
+        nullable=True,
     )
-    path = models.CharField(max_length=255)
-    content_id = models.IntegerField(null=True, blank=True)
-    timestamp = models.DateTimeField(auto_now_add=True)
-    ip_address = models.GenericIPAddressField(null=True, blank=True)
-    user_agent = models.TextField(null=True, blank=True)
-    referrer = models.URLField(max_length=500, null=True, blank=True)
+    path = db.Column(db.String(255), nullable=False, default='')
+    content_id = db.Column(db.Integer, nullable=True)
+    timestamp = db.Column(db.DateTime, nullable=False, default=now)
+    ip_address = db.Column(db.String(39), nullable=True)
+    user_agent = db.Column(db.Text, nullable=True)
+    referrer = db.Column(db.String(500), nullable=True)
     METHOD_CHOICES = [
         ('GET', 'GET'),
         ('POST', 'POST'),
@@ -21,34 +27,44 @@ class PageVisit(models.Model):
         ('DELETE', 'DELETE'),
         ('PATCH', 'PATCH'),
     ]
-    method = models.CharField(max_length=10, choices=METHOD_CHOICES)
+    method = db.Column(db.String(10), nullable=False)
     DEVICE_TYPE_CHOICES = [
         ('mobile', 'mobile'),
         ('tablet', 'tablet'),
         ('desktop', 'desktop'),
     ]
-    device_type = models.CharField(max_length=50, choices=DEVICE_TYPE_CHOICES,
-                                   default='unknown')
-    language = models.CharField(max_length=10, null=True, blank=True,
-                                default='en')
-    browser = models.CharField(max_length=50, null=True, blank=True)
-    os = models.CharField(max_length=50, null=True, blank=True)
-    device_brand = models.CharField(max_length=50, null=True, blank=True)
-    device_model = models.CharField(max_length=50, null=True, blank=True)
+    device_type = db.Column(db.String(50), nullable=False, default='unknown')
+    language = db.Column(db.String(10), nullable=True, default='en')
+    browser = db.Column(db.String(50), nullable=True)
+    os = db.Column(db.String(50), nullable=True)
+    device_brand = db.Column(db.String(50), nullable=True)
+    device_model = db.Column(db.String(50), nullable=True)
 
-    ga_client_id = models.CharField(max_length=100, null=True, blank=True)
-    ga_session_id = models.CharField(max_length=100, null=True, blank=True)
+    ga_client_id = db.Column(db.String(100), nullable=True)
+    ga_session_id = db.Column(db.String(100), nullable=True)
 
-    gads_id = models.CharField(max_length=100, null=True, blank=True)
-    gpi_uid = models.CharField(max_length=100, null=True, blank=True)
+    gads_id = db.Column(db.String(100), nullable=True)
+    gpi_uid = db.Column(db.String(100), nullable=True)
 
-    class Meta:
-        ordering = ['-timestamp']
-        indexes = [
-            models.Index(fields=['timestamp']),
-            models.Index(fields=['device_type']),
-            models.Index(fields=['ip_address']),
-        ]
+    __table_args__ = (
+        db.Index('core_pagevi_timesta_9a6d5c_idx', 'timestamp'),
+        db.Index('core_pagevi_device__4dd8d5_idx', 'device_type'),
+        db.Index('core_pagevi_ip_addr_2ee1e0_idx', 'ip_address'),
+    )
+
+    #: ``Meta.ordering`` — every read of this table is newest-first.
+    default_ordering = (timestamp.desc(),)
+
+    user = db.relationship('User')
+
+    @property
+    def pk(self):
+        return self.id
+
+    def save(self, *args, **kwargs):
+        if self.timestamp is None:
+            self.timestamp = now()
+        return super(PageVisit, self).save()
 
     def __str__(self):
         return f"{self.user} visited {self.path} at {self.timestamp}"

@@ -1,8 +1,8 @@
-from django.test import TestCase
-from django.urls import reverse
-from rest_framework import status
-from rest_framework.test import APIClient
-from django.contrib.auth import get_user_model
+from core.models import get_user_model
+from core.urls import reverse
+
+from app.api import status
+from app.api.test import APIClient, TestCase
 
 
 class UserAdminAPITests(TestCase):

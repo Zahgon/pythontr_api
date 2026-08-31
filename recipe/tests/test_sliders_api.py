@@ -1,11 +1,10 @@
-from django.contrib.auth import get_user_model
-from django.urls import reverse
-from django.test import TestCase
+from sqlalchemy.orm.exc import NoResultFound
 
-from rest_framework import status
-from rest_framework.test import APIClient
+from core.models import Slider, get_user_model
+from core.urls import reverse
 
-from core.models import Slider
+from app.api import status
+from app.api.test import APIClient, TestCase
 
 
 SLIDERS_URL = reverse('recipe:slider-list')
@@ -32,7 +31,7 @@ class PublicSliderApiTest(TestCase):
 
     def test_404_slider_login_not_required(self):
         url = detail_url(1)
-        with self.assertRaises(Slider.DoesNotExist):
+        with self.assertRaises(NoResultFound):
             self.client.get(url)
 
     def test_dont_create_slider(self):
@@ -56,7 +55,7 @@ class PublicSliderApiTest(TestCase):
         url = detail_url(slider.id)
 
         res = self.client.get(url)
-        self.assertEquals(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
 
 
 class PrivateSliderApiTest(TestCase):
@@ -79,7 +78,7 @@ class PrivateSliderApiTest(TestCase):
         }
 
         res = self.client.post(SLIDERS_URL, content)
-        self.assertEquals(res.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
 
     def test_update_slider(self):
         self.is_staff = True
@@ -101,8 +100,8 @@ class PrivateSliderApiTest(TestCase):
         url = detail_url(slider.id)
 
         res = self.client.put(url, content)
-        self.assertEquals(res.status_code, status.HTTP_200_OK)
-        self.assertEquals(res.data['title'], content['title'])
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.data['title'], content['title'])
 
     def test_dont_delete_slider(self):
         self.is_staff = True
