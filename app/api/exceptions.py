@@ -1,7 +1,8 @@
 """Exception hierarchy for the HTTP layer.
 
 Every exception carries the status code and the JSON body that the endpoint
-answered with before the migration.
+answered with before the migration, in the language negotiated for the request
+that raised it.
 """
 
 from flask import jsonify
@@ -16,8 +17,11 @@ class APIException(Exception):
     default_detail = messages.SERVER_ERROR
 
     def __init__(self, detail=None, status_code=None):
-        super().__init__(detail or self.default_detail)
-        self.detail = self.default_detail if detail is None else detail
+        detail = self.default_detail if detail is None else detail
+        if isinstance(detail, str):
+            detail = messages.localize(detail)
+        super().__init__(detail)
+        self.detail = detail
         if status_code is not None:
             self.status_code = status_code
 
@@ -41,7 +45,7 @@ class UnsupportedMediaType(APIException):
 
     def __init__(self, media_type, detail=None):
         if detail is None:
-            detail = messages.UNSUPPORTED_MEDIA_TYPE.format(
+            detail = messages.localize(messages.UNSUPPORTED_MEDIA_TYPE).format(
                 media_type=media_type,
             )
         super().__init__(detail)
@@ -59,9 +63,10 @@ class ValidationError(APIException):
 
     def __init__(self, detail=None, status_code=None):
         if detail is None:
-            detail = {'non_field_errors': [self.default_detail]}
+            detail = {'non_field_errors': [messages.localize(
+                self.default_detail)]}
         elif not isinstance(detail, (dict, list)):
-            detail = {'non_field_errors': [detail]}
+            detail = {'non_field_errors': [messages.localize(detail)]}
         super().__init__(detail, status_code)
 
     def get_body(self):
@@ -88,13 +93,19 @@ class NotFound(APIException):
     default_detail = messages.NOT_FOUND
 
 
+class NotAcceptable(APIException):
+    status_code = 406
+    default_detail = messages.NOT_ACCEPTABLE
+
+
 class MethodNotAllowed(APIException):
     status_code = 405
     default_detail = messages.METHOD_NOT_ALLOWED
 
     def __init__(self, method, detail=None, status_code=None):
         if detail is None:
-            detail = messages.METHOD_NOT_ALLOWED.format(method=method)
+            detail = messages.localize(messages.METHOD_NOT_ALLOWED).format(
+                method=method)
         super().__init__(detail, status_code)
 
 

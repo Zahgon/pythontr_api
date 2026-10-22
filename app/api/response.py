@@ -11,6 +11,7 @@ from flask import json
 # than as \u escapes.  Both are visible on the wire, hence the explicit
 # arguments instead of the encoder defaults.
 SEPARATORS = (',', ':')
+INDENT_SEPARATORS = (',', ': ')
 
 
 class Response:
@@ -22,16 +23,22 @@ class Response:
         self.headers = dict(headers or {})
         self.content_type = content_type
 
-    def to_flask_response(self):
+    def to_flask_response(self, indent=None):
         from flask import make_response
 
         if self.status == 204 or self.data is None:
             response = make_response('', self.status)
             response.headers.pop('Content-Type', None)
         else:
-            body = json.dumps(
-                self.data, ensure_ascii=False, separators=SEPARATORS
-            )
+            if indent is None:
+                body = json.dumps(
+                    self.data, ensure_ascii=False, separators=SEPARATORS
+                )
+            else:
+                # An ``indent`` asked for in the Accept header kept the
+                # colon's space, as the renderer's indented form did.
+                body = json.dumps(self.data, ensure_ascii=False,
+                                  separators=INDENT_SEPARATORS, indent=indent)
             response = make_response(body, self.status)
             response.headers['Content-Type'] = (
                 self.content_type or 'application/json'

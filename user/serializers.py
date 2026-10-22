@@ -7,7 +7,7 @@ from marshmallow import ValidationError, validates
 from sqlalchemy.orm.exc import NoResultFound
 
 from app import settings
-from app.api import fields
+from app.api import fields, messages
 from app.api.serializers import Serializer
 from app.api.validators import unique_check
 
@@ -23,6 +23,8 @@ class UserSerializer(Serializer):
         required=True,
         load_only=True,
         min_length=5,
+        max_length=128,
+        metadata={'label': messages.Message('Parola', 'Password')},
     )
     confirm_password = fields.CharField(
         load_only=True,
@@ -40,7 +42,7 @@ class UserSerializer(Serializer):
     github = fields.CharField(required=False, allow_blank=True, max_length=255)
     is_notification_email = fields.BooleanField(required=False)
     image_url = fields.ReadOnlyField()
-    slug = fields.CharField(dump_only=True)
+    slug = fields.SlugField(dump_only=True)
     is_staff = fields.BooleanField(required=False)
     current_password = fields.CharField(
         load_only=True,

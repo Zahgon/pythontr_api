@@ -25,7 +25,7 @@ class ArticleSerializer(Serializer):
     image = fields.ImageField(required=False, allow_none=True)
     read_count = fields.IntegerField(dump_only=True)
     image_url = fields.ReadOnlyField()
-    slug = fields.CharField(dump_only=True)
+    slug = fields.SlugField(dump_only=True)
     user = fields.PrimaryKeyRelatedField(
         User, required=False, allow_none=True
     )

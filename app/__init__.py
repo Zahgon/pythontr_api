@@ -101,7 +101,11 @@ def create_app(config=None):
             response.headers.setdefault(
                 'Content-Language', str(select_locale())
             )
-            response.headers.add('Vary', 'Accept-Language')
+            vary = response.headers.get('Vary')
+            response.headers['Vary'] = (
+                '{}, Accept-Language'.format(vary) if vary
+                else 'Accept-Language'
+            )
         if response.status_code == 308:
             # The only 308 this application can produce is the routing layer
             # appending a missing trailing slash, and that answered 301.

@@ -22,6 +22,10 @@ from .filter_param import RulesFilter, Search, Me, Category
 
 class ArticleViewSet(BaseViewSet, mixins.CreateModelMixin):
     model = Article
+    # Uploads came first in this view's parser list.
+    parser_media_types = ('multipart/form-data',
+                          'application/x-www-form-urlencoded',
+                          'application/json')
     serializer_class = serializers.ArticleSerializer
     permission_classes_by_action = {
         'list': [IsAuthenticatedOrReadOnly],

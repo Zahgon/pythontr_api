@@ -15,7 +15,7 @@ from flask import current_app, g
 from flask import request as flask_request
 from werkzeug.utils import import_string
 
-from app.api import status
+from app.api import metadata, negotiation, status
 from app.api.exceptions import (APIException, AuthenticationFailed,
                                 MethodNotAllowed, NotAuthenticated,
                                 PermissionDenied)
@@ -32,6 +32,10 @@ class APIView:
     permission_classes = (AllowAny,)
     http_method_names = ['get', 'post', 'put', 'patch', 'delete', 'head',
                          'options']
+    #: What ``OPTIONS`` reports the view parses, in the view's parser order.
+    parser_media_types = ('application/json',
+                          'application/x-www-form-urlencoded',
+                          'multipart/form-data')
 
     def __init__(self, **initkwargs):
         for key, value in initkwargs.items():
@@ -146,13 +150,21 @@ class APIView:
     def finalize_response(self, response):
         for key, value in self.headers.items():
             response.headers.setdefault(key, value)
-        return response.to_flask_response()
+        indent = None
+        if self.accepted_media_type is not None:
+            indent = negotiation.indent_for(self.accepted_media_type)
+        return response.to_flask_response(indent=indent)
 
     def dispatch(self, request, **kwargs):
         self.format_kwarg = kwargs.pop('format', None)
         self.setup(request, **kwargs)
         self.headers = self.default_response_headers
+        self.accepted_media_type = None
         try:
+            # Negotiated ahead of authentication: an unservable format or
+            # Accept header answers 404 / 406 whoever is asking.
+            _, self.accepted_media_type = negotiation.select_renderer(
+                request, self.format_kwarg)
             self.initial(request, **kwargs)
             method = request.method.lower()
             if method in self.http_method_names:
@@ -188,12 +200,11 @@ class APIView:
             'name': self.get_view_name(),
             'description': self.get_view_description(),
             'renders': ['application/json', 'text/html'],
-            'parses': [
-                'application/json',
-                'application/x-www-form-urlencoded',
-                'multipart/form-data',
-            ],
+            'parses': list(self.parser_media_types),
         }
+        actions = metadata.determine_actions(request, self)
+        if actions:
+            data['actions'] = actions
         return Response(data, status=status.HTTP_200_OK)
 
 

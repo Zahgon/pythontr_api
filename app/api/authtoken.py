@@ -13,6 +13,9 @@ from core.models import Token
 class ObtainAuthToken(APIView):
     permission_classes = ()
     serializer_class = None
+    parser_media_types = ('application/x-www-form-urlencoded',
+                          'multipart/form-data',
+                          'application/json')
 
     def get_serializer_context(self):
         return {

@@ -28,6 +28,8 @@ DynamicRoute = namedtuple('DynamicRoute',
 class APIRootView(APIView):
     """The document listing every collection the router publishes."""
 
+    # ``OPTIONS`` reported the previous framework's own docstring here.
+    description = 'The default basic root view for DefaultRouter'
     permission_classes = (AllowAny,)
     api_root_dict = None
     name = 'Api Root'

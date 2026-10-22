@@ -22,7 +22,7 @@ class CategoryReleatedSerializer(Serializer):
     content = fields.CharField(
         required=False, allow_none=True, allow_blank=True
     )
-    slug = fields.CharField(dump_only=True)
+    slug = fields.SlugField(dump_only=True)
     short_name = fields.CharField(required=True, max_length=100)
     full_category_name = fields.ReadOnlyField()
     created_at = fields.DateTimeField(dump_only=True)

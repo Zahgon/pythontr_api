@@ -25,7 +25,7 @@ def unique_check(model, column, value, instance=None, field=None, label=None):
         query = query.filter(model.id != instance_id)
     if query.first() is not None:
         raise MarshmallowValidationError(
-            messages.UNIQUE.format(
+            messages.localize(messages.UNIQUE).format(
                 field=field or column.key,
                 model=label or model.__name__.lower(),
             )

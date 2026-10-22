@@ -6,9 +6,12 @@ depend on who is calling) and the ``instance``/``save()`` pair the views use to
 turn a validated payload into a row.
 """
 
+from collections.abc import Mapping
+
 from marshmallow import EXCLUDE, Schema, missing, post_load, pre_load
 from marshmallow import ValidationError as MarshmallowValidationError
 
+from app.api import messages
 from app.api.exceptions import ValidationError
 
 
@@ -78,11 +81,19 @@ class Serializer(Schema):
         return data
 
     def is_valid(self, raise_exception=False):
+        data = self.initial_data if self.initial_data is not missing else {}
+        if not isinstance(data, Mapping):
+            # The previous serializers refused anything but an object before
+            # looking at a single field, naming the type they were handed.
+            self._validated_data = None
+            self._errors = {'non_field_errors': [
+                messages.localize(messages.INVALID_DATA).format(
+                    datatype=type(data).__name__)]}
+            if raise_exception:
+                raise ValidationError(self._errors)
+            return False
         try:
-            self._validated_data = self.load(
-                self.initial_data if self.initial_data is not missing else {},
-                partial=self.partial,
-            )
+            self._validated_data = self.load(data, partial=self.partial)
         except MarshmallowValidationError as exc:
             self._validated_data = None
             self._errors = normalize_errors(exc.messages)
