@@ -9,9 +9,9 @@ services:
         volumes:
             - ./:/app
         command: >
-            sh -c "python manage.py wait_for_db &&
-                   python manage.py migrate &&
-                   python manage.py runserver 0.0.0.0:8000"
+            sh -c "python -m core.management.commands.wait_for_db &&
+                   alembic upgrade head &&
+                   uvicorn app.main:app --host 0.0.0.0 --port 8000"
             #opsiyonel
             #./scripts/wait-for-db.sh db && 
         environment:
@@ -20,7 +20,8 @@ services:
             - DB_NAME=app
             - DB_USER=postgres
             - DB_PASS=supersecretpassword
-            - DB_ENGINE=django.db.backends.postgresql
+            - DB_ENGINE=postgresql
+            - DB_PORT=5432
             - DEBUG=True
             - RECAPTCHA_SITE_KEY=your_site_key
             - RECAPTCHA_SECRET_KEY=your_api_secret_key

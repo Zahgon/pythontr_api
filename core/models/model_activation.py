@@ -1,35 +1,44 @@
 import uuid
+from datetime import datetime, timedelta
 
-from django.db import models
-from django.contrib.auth import get_user_model
-from django.utils import timezone
+from sqlalchemy import DateTime, ForeignKey, Integer, String, select, update
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from datetime import timedelta
+from app.db import Base
 
-User = get_user_model()
+from .model_user import utcnow
 
 
-class ActivationCode(models.Model):
-    user = models.ForeignKey(User, on_delete=models.CASCADE)
-    code = models.UUIDField(default=uuid.uuid4, editable=False)
-    created_at = models.DateTimeField(auto_now_add=True)
-    expires_at = models.DateTimeField()
-    is_used = models.BooleanField(default=False)
+class ActivationCode(Base):
+    __tablename__ = 'core_activationcode'
 
-    def save(self, *args, **kwargs):
-        if not self.expires_at:
-            self.expires_at = timezone.now() + timedelta(hours=24)
-        super().save(*args, **kwargs)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey('core_user.id'), nullable=False)
+    code: Mapped[str] = mapped_column(String(32), nullable=False,
+                                      default=lambda: uuid.uuid4().hex)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    is_used: Mapped[bool] = mapped_column(nullable=False, default=False)
+
+    user = relationship('User', lazy='joined')
+
+    @property
+    def pk(self):
+        return self.id
 
     @property
     def is_expired(self):
-        now = timezone.now()
-        expires_at = self.expires_at
-        if self.expires_at.tzinfo is None:
-            expires_at = timezone.make_aware(self.expires_at)
-        return now > expires_at
+        return utcnow() > self.expires_at
 
     @classmethod
-    def create_activation_code(cls, user):
-        cls.objects.filter(user=user, is_used=False).update(is_used=True)
-        return cls.objects.create(user=user)
+    def create_activation_code(cls, session, user):
+        session.execute(update(cls)
+                        .where(cls.user_id == user.id, cls.is_used.is_(False))
+                        .values(is_used=True))
+        activation = cls(user_id=user.id, code=uuid.uuid4().hex,
+                         created_at=utcnow(),
+                         expires_at=utcnow() + timedelta(hours=24),
+                         is_used=False)
+        session.add(activation)
+        session.flush()
+        return activation

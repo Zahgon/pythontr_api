@@ -1,36 +1,38 @@
-from django.db import models
+from datetime import datetime
 
-from django.conf import settings
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, select
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.db import Base
 
-class MessageManager(models.Manager):
-    def get_queryset(self):
-        return super().get_queryset().filter(
-            is_delete=False
-        )
+from .model_user import utcnow
 
 
-class Message(models.Model):
-    created_at = models.DateTimeField(auto_now_add=True)
-    sender = models.ForeignKey(
-        settings.AUTH_USER_MODEL, related_name='sender_user',
-        on_delete=models.SET_NULL, null=True, blank=True
-    )
+class Message(Base):
+    __tablename__ = 'core_message'
 
-    user = models.ForeignKey(
-        settings.AUTH_USER_MODEL, related_name='reciever_user',
-        on_delete=models.SET_NULL, null=True, blank=True
-    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
+    sender_id: Mapped[int] = mapped_column(ForeignKey('core_user.id'), nullable=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey('core_user.id'), nullable=True)
+    subject: Mapped[str] = mapped_column(String(255), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    ip: Mapped[str] = mapped_column(String(100), nullable=False)
+    is_read: Mapped[bool] = mapped_column(nullable=False, default=False)
+    is_delete: Mapped[bool] = mapped_column(nullable=False, default=False)
+    is_sender_delete: Mapped[bool] = mapped_column(nullable=False, default=False)
 
-    subject = models.CharField(max_length=255, blank=False)
-    content = models.TextField(blank=False)
-    ip = models.CharField(max_length=100, blank=False)
+    sender = relationship('User', foreign_keys=[sender_id], lazy='joined')
+    user = relationship('User', foreign_keys=[user_id], lazy='joined')
 
-    is_read = models.BooleanField(default=False)
-    is_delete = models.BooleanField(default=False)
-    is_sender_delete = models.BooleanField(default=False)
-
-    objects = MessageManager()
+    @property
+    def pk(self):
+        return self.id
 
     def __str__(self):
         return self.subject
+
+
+def visible_messages():
+    """The default message query. Soft-deleted rows are invisible to every caller."""
+    return select(Message).where(Message.is_delete.is_(False))

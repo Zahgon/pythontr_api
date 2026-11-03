@@ -1,34 +1,27 @@
-import re
+"""The page envelope.
 
-from rest_framework import pagination
-from rest_framework.response import Response
+The arithmetic and the link rewriting live in :func:`app.wire.paginate`; this module keeps
+the names the settings file points at.
+"""
+
+from app.wire import PAGE_QUERY_PARAM, page_size, paginate  # noqa: F401
 
 
-class CustomPagination(pagination.PageNumberPagination):
-    def get_paginated_response(self, data):
-        current_page_number = self.page.number
-        next_link = self.get_next_link()
-        previous_link = self.get_previous_link()
+def relative(link):
+    """Reduce an absolute link to a path, as the old class did with ``split('/', 3)``."""
+    if not link:
+        return None
+    return '/{}'.format(link.split('/', 3)[-1])
 
-        if next_link:
-            next_link = '/{}'.format(next_link.split('/', 3)[-1])
-        if previous_link:
-            previous_link = '/{}'.format(previous_link.split('/', 3)[-1])
 
-        first_page = re.sub(
-            r'\?page=\d+', '', previous_link) if previous_link else None
-        last_page = re.sub(
-            r'\?page=\d+', '?page={}'.format(
-                self.page.paginator.num_pages
-            ), next_link) if next_link else None
+class CustomPagination:
+    """``settings.API['DEFAULT_PAGINATION_CLASS']`` points here."""
 
-        return Response({
-            'count': self.page.paginator.count,
-            'first_page': first_page,
-            'last_page': last_page,
-            'next': next_link,
-            'previous': previous_link,
-            'last_page_number': self.page.paginator.num_pages,
-            'current_page': current_page_number,
-            'results': data,
-        })
+    page_query_param = PAGE_QUERY_PARAM
+
+    @property
+    def page_size(self):
+        return page_size()
+
+    def get_paginated_response(self, request, rows, serialize):
+        return paginate(request, rows, serialize)

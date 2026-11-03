@@ -1,4 +1,4 @@
-FROM python:3.9-alpine3.13
+FROM python:3.12-alpine3.20
 LABEL maintainer="Pythontr.Com Huseyin OZDEMIR"
 
 ENV PYTHONUNBUFFERED 1
@@ -14,7 +14,7 @@ EXPOSE 8000
 # Added two lines after that for warnings
 ARG DEV=false
 RUN apk update
-RUN apk add --update --no-cache postgresql-client jpeg-dev gettext && \
+RUN apk add --update --no-cache postgresql-client jpeg-dev && \
     apk add --update --no-cache --virtual .tmp-build-deps \
     gcc libc-dev linux-headers postgresql-dev musl-dev zlib zlib-dev
 RUN python -m venv /venv && \

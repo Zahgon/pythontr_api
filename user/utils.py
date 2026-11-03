@@ -1,13 +1,22 @@
-from django.utils import timezone
+"""Reporting helper.
+
+Dead code under a public name, kept as it was: nothing in the request path calls it.
+"""
+
 from datetime import timedelta
 
+from sqlalchemy import func, select
 
-def get_time_based_stats(model):
-    now = timezone.now()
+from core.models import utcnow
+
+
+def get_time_based_stats(session, model):
+    now = utcnow()
     return {
-        'today': model.objects.filter(created_at__date=now.date()).count(),
-        'this_week': model.objects.filter(
-            created_at__gte=now-timedelta(days=7)).count(),
-        'this_month': model.objects.filter(
-            created_at__month=now.month).count(),
+        'today': session.scalar(select(func.count()).select_from(model).where(
+            func.date(model.created_at) == now.date())),
+        'this_week': session.scalar(select(func.count()).select_from(model).where(
+            model.created_at >= now - timedelta(days=7))),
+        'this_month': session.scalar(select(func.count()).select_from(model).where(
+            func.extract('month', model.created_at) == now.month)),
     }

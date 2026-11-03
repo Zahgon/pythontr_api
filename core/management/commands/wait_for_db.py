@@ -1,25 +1,49 @@
-import time
+"""Block until the database answers."""
+
 import sys
-from django.db import connections
-from django.db.utils import OperationalError
-from psycopg2 import OperationalError as Psycopg2Error
-from django.core.management.base import BaseCommand
+import time
+
+
+class OutputWrapper:
+    def __init__(self, stream=None):
+        self.stream = stream or sys.stdout
+
+    def write(self, message, ending='\n'):
+        self.stream.write(str(message) + ending)
+
+
+class Style:
+    def SUCCESS(self, message):
+        return message
+
+    def WARNING(self, message):
+        return message
+
+
+class BaseCommand:
+    def __init__(self, stdout=None):
+        self.stdout = OutputWrapper(stdout)
+        self.style = Style()
 
 
 class Command(BaseCommand):
+    help = 'Django command to pause execution until database is available'
 
     def handle(self, *args, **options):
+        if 'test' in sys.argv:
+            return
+        from app.db import connections
         self.stdout.write('Waiting for database...')
-        connected = False
-        while not connected:
+        db_conn = None
+        while not db_conn:
             try:
-                db_conn = connections["default"]
-                if 'test' not in sys.argv:
-                    db_conn.ensure_connection()
-                self.stdout.write('Database is ready!...')
-                connected = True
-            except (OperationalError, Psycopg2Error):
+                connections['default'].ensure_connection()
+                db_conn = True
+            except Exception:
                 self.stdout.write('Database unavailable, waiting 1 second...')
                 time.sleep(1)
-
         self.stdout.write(self.style.SUCCESS('Database available!'))
+
+
+if __name__ == '__main__':
+    Command().handle()

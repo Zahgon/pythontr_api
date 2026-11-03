@@ -1,9 +1,16 @@
-from django.db import models
-from django.conf import settings
-from django.utils.text import slugify
+from datetime import datetime
+
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.db import Base
+from app.text import slugify
+
+from .model_user import utcnow
 
 
 def slider_image_file_path(instance, filename):
+    from app import settings
     f_name, ext = filename.split('.')
     allowed_chars = \
         "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._"
@@ -13,33 +20,36 @@ def slider_image_file_path(instance, filename):
     return file_path
 
 
-class Slider(models.Model):
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now_add=True)
-    title = models.CharField(max_length=255, unique=True)
-    description = models.TextField(blank=True, null=True)
-    link = models.CharField(max_length=255, blank=True, null=True)
-    image = models.ImageField(null=True, upload_to=slider_image_file_path,
-                              blank=True)
-    user = models.ForeignKey(
-        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
-        null=True, blank=True
-    )
-    is_active = models.BooleanField(default=False)
-    is_approval = models.BooleanField(default=False)
-    approval_user = models.ForeignKey(
-        settings.AUTH_USER_MODEL, related_name='approved_sliders',
-        on_delete=models.SET_NULL,
-        null=True, blank=True
-    )
-    is_delete = models.BooleanField(default=False)
+class Slider(Base):
+    __tablename__ = 'core_slider'
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
+    title: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    description: Mapped[str] = mapped_column(Text, nullable=True)
+    link: Mapped[str] = mapped_column(String(255), nullable=True)
+    image: Mapped[str] = mapped_column(String(100), nullable=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey('core_user.id'), nullable=True)
+    is_active: Mapped[bool] = mapped_column(nullable=False, default=False)
+    is_approval: Mapped[bool] = mapped_column(nullable=False, default=False)
+    approval_user_id: Mapped[int] = mapped_column(ForeignKey('core_user.id'), nullable=True)
+    is_delete: Mapped[bool] = mapped_column(nullable=False, default=False)
+
+    user = relationship('User', foreign_keys=[user_id], lazy='joined')
+    approval_user = relationship('User', foreign_keys=[approval_user_id], lazy='joined')
+
+    @property
+    def pk(self):
+        return self.id
 
     def __str__(self):
         return self.title
 
     @property
     def image_url(self):
+        from app import settings
         image_url = None
         if self.image:
-            image_url = self.image.url.replace(settings.APLICATION_NAME, '')
+            image_url = ('/%s' % self.image).replace(settings.APLICATION_NAME, '')
         return image_url

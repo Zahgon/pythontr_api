@@ -1,46 +1,27 @@
-from rest_framework.permissions import BasePermission, SAFE_METHODS
+"""Object-level rules.
 
-from core.models import Article
+They are declared, and the detail routes never reach them: every ``get_object`` returns
+its row directly. The rules are kept because they are part of the project's vocabulary.
+"""
+
+SAFE_METHODS = ('GET', 'HEAD', 'OPTIONS')
 
 
-class IsAuthenticatedAndOwner(BasePermission):
+class IsAuthenticatedAndOwner:
     message = 'You must be the owner of this object.'
 
-    def has_permission(self, request, view):
-        return bool(request.user and request.user.is_authenticated)
+    def has_permission(self, request, user):
+        return bool(user and user.is_authenticated)
 
-    def has_object_permission(self, request, view, obj):
-
+    def has_object_permission(self, request, user, obj):
         if request.method in SAFE_METHODS:
             return True
-
-        if hasattr(obj, 'user'):
-            return obj.user.id == request.user.id
-        else:
-            return False
+        if getattr(obj, 'user_id', None) is not None:
+            return obj.user_id == user.id
+        return False
 
 
-class IsAuthenticatedAndOwnerOrAdmin(BasePermission):
-    def has_object_permission(self, request, view, obj):
-        # For admin or owner permission
-        return bool(
-            request.user and
-            request.user.is_authenticated and
-            (request.user.is_staff or obj.user == request.user)
-        )
-
-
-class IsAuthenticatedAndOwnerOld(BasePermission):
-
-    def has_permission(self, request, view):
-        try:
-            result = True
-            Article.objects.select_related('user').get(
-                id=view.kwargs.get('id'),
-                user_id=view.kwargs.get('user_id')
-            )
-        except Article.DoesNotExist:
-            result = False
-        if request.user.is_superuser:
-            result = True
-        return result
+class IsAuthenticatedAndOwnerOrAdmin:
+    def has_object_permission(self, request, user, obj):
+        return bool(user and user.is_authenticated
+                    and (user.is_staff or obj.user_id == user.id))

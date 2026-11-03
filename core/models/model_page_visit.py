@@ -1,54 +1,63 @@
-from django.db import models
-from django.contrib.auth import get_user_model
+from datetime import datetime
+
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.db import Base
+
+from .model_user import utcnow
+
+METHOD_CHOICES = [
+    ('GET', 'GET'),
+    ('POST', 'POST'),
+    ('PUT', 'PUT'),
+    ('DELETE', 'DELETE'),
+    ('PATCH', 'PATCH'),
+]
+
+DEVICE_TYPE_CHOICES = [
+    ('mobile', 'mobile'),
+    ('tablet', 'tablet'),
+    ('desktop', 'desktop'),
+]
 
 
-class PageVisit(models.Model):
-    user = models.ForeignKey(
-        get_user_model(),
-        on_delete=models.CASCADE,
-        null=True, blank=True
+class PageVisit(Base):
+    __tablename__ = 'core_pagevisit'
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey('core_user.id'), nullable=True)
+    path: Mapped[str] = mapped_column(String(255), nullable=False)
+    content_id: Mapped[int] = mapped_column(Integer, nullable=True)
+    timestamp: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
+    ip_address: Mapped[str] = mapped_column(String(39), nullable=True)
+    user_agent: Mapped[str] = mapped_column(Text, nullable=True)
+    referrer: Mapped[str] = mapped_column(String(500), nullable=True)
+    method: Mapped[str] = mapped_column(String(10), nullable=False)
+    # 'unknown' is not a member of DEVICE_TYPE_CHOICES. It is the default the column was
+    # created with, so it stays.
+    device_type: Mapped[str] = mapped_column(String(50), nullable=False, default='unknown')
+    language: Mapped[str] = mapped_column(String(10), nullable=True, default='en')
+    browser: Mapped[str] = mapped_column(String(50), nullable=True)
+    os: Mapped[str] = mapped_column(String(50), nullable=True)
+    device_brand: Mapped[str] = mapped_column(String(50), nullable=True)
+    device_model: Mapped[str] = mapped_column(String(50), nullable=True)
+    ga_client_id: Mapped[str] = mapped_column(String(100), nullable=True)
+    ga_session_id: Mapped[str] = mapped_column(String(100), nullable=True)
+    gads_id: Mapped[str] = mapped_column(String(100), nullable=True)
+    gpi_uid: Mapped[str] = mapped_column(String(100), nullable=True)
+
+    user = relationship('User', lazy='joined')
+
+    __table_args__ = (
+        Index('core_pagevisit_timestamp_idx', 'timestamp'),
+        Index('core_pagevisit_device_type_idx', 'device_type'),
+        Index('core_pagevisit_ip_address_idx', 'ip_address'),
     )
-    path = models.CharField(max_length=255)
-    content_id = models.IntegerField(null=True, blank=True)
-    timestamp = models.DateTimeField(auto_now_add=True)
-    ip_address = models.GenericIPAddressField(null=True, blank=True)
-    user_agent = models.TextField(null=True, blank=True)
-    referrer = models.URLField(max_length=500, null=True, blank=True)
-    METHOD_CHOICES = [
-        ('GET', 'GET'),
-        ('POST', 'POST'),
-        ('PUT', 'PUT'),
-        ('DELETE', 'DELETE'),
-        ('PATCH', 'PATCH'),
-    ]
-    method = models.CharField(max_length=10, choices=METHOD_CHOICES)
-    DEVICE_TYPE_CHOICES = [
-        ('mobile', 'mobile'),
-        ('tablet', 'tablet'),
-        ('desktop', 'desktop'),
-    ]
-    device_type = models.CharField(max_length=50, choices=DEVICE_TYPE_CHOICES,
-                                   default='unknown')
-    language = models.CharField(max_length=10, null=True, blank=True,
-                                default='en')
-    browser = models.CharField(max_length=50, null=True, blank=True)
-    os = models.CharField(max_length=50, null=True, blank=True)
-    device_brand = models.CharField(max_length=50, null=True, blank=True)
-    device_model = models.CharField(max_length=50, null=True, blank=True)
 
-    ga_client_id = models.CharField(max_length=100, null=True, blank=True)
-    ga_session_id = models.CharField(max_length=100, null=True, blank=True)
-
-    gads_id = models.CharField(max_length=100, null=True, blank=True)
-    gpi_uid = models.CharField(max_length=100, null=True, blank=True)
-
-    class Meta:
-        ordering = ['-timestamp']
-        indexes = [
-            models.Index(fields=['timestamp']),
-            models.Index(fields=['device_type']),
-            models.Index(fields=['ip_address']),
-        ]
+    @property
+    def pk(self):
+        return self.id
 
     def __str__(self):
         return f"{self.user} visited {self.path} at {self.timestamp}"
